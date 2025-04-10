@@ -8,7 +8,7 @@ import sys
 import warnings
 import numpy as np
 from PIL import Image
-from .converters.persp2equir import perspective_to_equirectangular
+from .converters.pers2equi import perspective_to_equirectangular
 
 def main():
     """Main entry point for the CLI."""

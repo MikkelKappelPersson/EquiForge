@@ -21,16 +21,16 @@ pip install -e .
 
 ```bash
 # Basic usage
-persp2equir input.jpg output.jpg
+pers2equi input.jpg output.jpg
 
 # With options
-persp2equir input.jpg output.jpg --fov 120 --height 2048 --yaw 30 --pitch 15 --roll 0 --cpu
+pers2equi input.jpg output.jpg --fov 120 --height 2048 --yaw 30 --pitch 15 --roll 0 --cpu
 ```
 
 ### Python API
 
 ```python
-from equiforge.converters.persp2equir import perspective_to_equirectangular
+from equiforge.converters.pers2equi import perspective_to_equirectangular
 from PIL import Image
 import numpy as np
 

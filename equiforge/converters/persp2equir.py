@@ -19,7 +19,7 @@ HAS_CUDA = check_cuda_support()
 # Define CUDA kernel for GPU acceleration
 if HAS_CUDA:
     @cuda.jit
-    def persp2equir_gpu_kernel(img, equirect, output_width, output_height, 
+    def pers2equi_gpu_kernel(img, equirect, output_width, output_height, 
                          cx, cy, f_h, f_v, w, h, r_matrix):
         """CUDA kernel to convert pixels from perspective to equirectangular"""
         x, y = cuda.grid(2)
@@ -54,7 +54,7 @@ if HAS_CUDA:
                     equirect[y, x, 2] = img[py, px, 2]
 
 @jit(nopython=True, parallel=True)
-def persp2equir_cpu_kernel(img, equirect, output_width, output_height, 
+def pers2equi_cpu_kernel(img, equirect, output_width, output_height, 
                       y_start, y_end, cx, cy, f_h, f_v, w, h, r_matrix):
     """Process a range of rows with Numba optimization on CPU"""
     for y in prange(y_start, y_end):
@@ -109,12 +109,12 @@ def process_chunk(args):
     chunk = np.zeros((y_end - y_start, output_width, 3), dtype=np.uint8)
     
     # Use CPU kernel for processing the chunk
-    chunk = persp2equir_cpu_kernel(img, chunk, output_width, output_height, 
+    chunk = pers2equi_cpu_kernel(img, chunk, output_width, output_height, 
                               0, y_end - y_start, cx, cy, f_h, f_v, w, h, R)
     
     return chunk
 
-def persp2equir_cpu(img, output_height, 
+def pers2equi_cpu(img, output_height, 
                   fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0):
     """Multi-threaded conversion from perspective to equirectangular projection"""
     # Standard equirectangular aspect ratio is 2:1
@@ -176,7 +176,7 @@ def persp2equir_cpu(img, output_height,
     return equirect
 
 @timer
-def persp2equir_gpu(img, output_height, 
+def pers2equi_gpu(img, output_height, 
                  fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0):
     """GPU-accelerated conversion from perspective to equirectangular projection"""
     # Standard equirectangular aspect ratio is 2:1
@@ -210,7 +210,7 @@ def persp2equir_gpu(img, output_height,
     blocks_per_grid = (blocks_x, blocks_y)
     
     # Launch kernel
-    persp2equir_gpu_kernel[blocks_per_grid, threads_per_block](
+    pers2equi_gpu_kernel[blocks_per_grid, threads_per_block](
         d_img, d_equirect, output_width, output_height, 
         cx, cy, f_h, f_v, w, h, d_r_matrix
     )
@@ -220,7 +220,7 @@ def persp2equir_gpu(img, output_height,
     
     return equirect
 
-def persp2equir(img, output_height, 
+def pers2equi(img, output_height, 
               fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0,
               use_gpu=True):
     """
@@ -260,7 +260,7 @@ def persp2equir(img, output_height,
     try:
         if use_gpu and HAS_CUDA:
             try:
-                result = persp2equir_gpu(img, output_height, 
+                result = pers2equi_gpu(img, output_height, 
                                        fov_h, yaw, pitch, roll)
                 # Verify we have actual data
                 if np.sum(result) == 0:
@@ -270,7 +270,7 @@ def persp2equir(img, output_height,
                 print(f"GPU processing failed: {e}. Falling back to CPU.")
         
         # Fallback to CPU processing
-        result = persp2equir_cpu(img, output_height, 
+        result = pers2equi_cpu(img, output_height, 
                                fov_h, yaw, pitch, roll)
         return result
     except Exception as e:

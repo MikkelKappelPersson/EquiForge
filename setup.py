@@ -12,7 +12,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'persp2equir=equiforge.cli:main',
+            'pers2equi=equiforge.cli:main',
         ],
     },
     author="EquiForge Team",
