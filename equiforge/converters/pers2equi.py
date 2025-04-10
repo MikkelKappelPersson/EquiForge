@@ -9,9 +9,14 @@ from PIL import Image
 import os
 import time
 import warnings
+import logging
 from multiprocessing import Pool, cpu_count
 from numba import jit, prange, cuda
 from ..utils.projection_utils import create_rotation_matrix, calculate_focal_length, check_cuda_support, timer
+from ..utils.logging_utils import setup_logger
+
+# Set up logger
+logger = setup_logger(__name__)
 
 # Check for CUDA support
 HAS_CUDA = check_cuda_support()
@@ -122,6 +127,7 @@ def pers2equi_cpu(img, output_height,
     
     # Validation to ensure image has proper shape
     if len(img.shape) != 3 or img.shape[2] != 3:
+        logger.error(f"Input image must have shape (height, width, 3), got {img.shape}")
         raise ValueError(f"Input image must have shape (height, width, 3), got {img.shape}")
     
     # Get optimal number of processes (75% of available CPU cores)
@@ -142,7 +148,7 @@ def pers2equi_cpu(img, output_height,
     equirect = np.zeros((output_height, output_width, 3), dtype=np.uint8)
     
     # Process chunks in parallel
-    print(f"Converting perspective to equirectangular using {num_processes} CPU processes...")
+    logger.info(f"Converting perspective to equirectangular using {num_processes} CPU processes...")
     with Pool(processes=num_processes) as pool:
         results = []
         for i, chunk_args in enumerate(args_list):
@@ -151,7 +157,9 @@ def pers2equi_cpu(img, output_height,
         # Monitor progress
         while not all(r.ready() for r in results):
             completed = sum(r.ready() for r in results)
-            print(f"Progress: {completed/len(results)*100:.1f}%", end="\r")
+            progress_msg = f"Progress: {completed/len(results)*100:.1f}%"
+            logger.debug(progress_msg)
+            print(f"{progress_msg}", end="\r")  # Keep real-time console output
             time.sleep(0.5)
         
         # Get results
@@ -162,16 +170,16 @@ def pers2equi_cpu(img, output_height,
             
             # Debug output
             if np.sum(chunk_data) == 0:
-                print(f"Warning: Chunk {i} is all zeros")
+                logger.warning(f"Chunk {i} is all zeros")
             
             # Copy chunk data to output image
             equirect[y_start:y_end] = chunk_data
     
     # Debug output
     if np.sum(equirect) == 0:
-        print("Warning: Output image is all zeros!")
+        logger.warning("Output image is all zeros!")
     else:
-        print("Conversion complete with non-zero data!")
+        logger.info("Conversion complete with non-zero data!")
         
     return equirect
 
@@ -182,7 +190,7 @@ def pers2equi_gpu(img, output_height,
     # Standard equirectangular aspect ratio is 2:1
     output_width = output_height * 2
     
-    print("Using GPU acceleration...")
+    logger.info("Using GPU acceleration...")
     h, w = img.shape[:2]
     cx, cy = w // 2, h // 2
     
@@ -199,6 +207,7 @@ def pers2equi_gpu(img, output_height,
     equirect = np.zeros((output_height, output_width, 3), dtype=np.uint8)
     
     # Copy data to GPU
+    logger.debug("Copying data to GPU...")
     d_img = cuda.to_device(img)
     d_equirect = cuda.to_device(equirect)
     d_r_matrix = cuda.to_device(R)
@@ -210,19 +219,21 @@ def pers2equi_gpu(img, output_height,
     blocks_per_grid = (blocks_x, blocks_y)
     
     # Launch kernel
+    logger.debug(f"Launching CUDA kernel with grid={blocks_per_grid}, block={threads_per_block}")
     pers2equi_gpu_kernel[blocks_per_grid, threads_per_block](
         d_img, d_equirect, output_width, output_height, 
         cx, cy, f_h, f_v, w, h, d_r_matrix
     )
     
     # Copy result back to host
+    logger.debug("Copying result back to CPU...")
     equirect = d_equirect.copy_to_host()
     
     return equirect
 
 def pers2equi(img, output_height, 
               fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True):
+              use_gpu=True, log_level=None):
     """
     Convert perspective image to equirectangular projection
     
@@ -234,45 +245,66 @@ def pers2equi(img, output_height,
     - pitch: Rotation around horizontal axis (up/down) in degrees
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
     - use_gpu: Whether to use GPU acceleration if available
+    - log_level: Optional override for log level during this conversion
     
     Returns:
     - Equirectangular image as numpy array
     """
-    # Handle file path input
-    if isinstance(img, str):
-        try:
-            print(f"Loading image from path: {img}")
-            img = np.array(Image.open(img))
-        except Exception as e:
-            print(f"Error loading image from path: {e}")
-            return None
-    
-    # Verify input image shape
-    if len(img.shape) != 3 or img.shape[2] != 3:
-        print(f"Warning: Expected 3-channel color image, got shape {img.shape}")
-        # Try to fix if grayscale
-        if len(img.shape) == 2:
-            img = np.stack((img,)*3, axis=-1)
-    
-    # To ensure computational stability
-    fov_h = max(0.1, min(179.9, fov_h))
+    # Set temporary log level if specified
+    original_level = None
+    if log_level is not None:
+        original_level = logger.level
+        logger.setLevel(log_level)
     
     try:
-        if use_gpu and HAS_CUDA:
+        # Handle file path input
+        if isinstance(img, str):
             try:
-                result = pers2equi_gpu(img, output_height, 
-                                       fov_h, yaw, pitch, roll)
-                # Verify we have actual data
-                if np.sum(result) == 0:
-                    raise ValueError("GPU processing returned an all-zero image. Falling back to CPU.")
-                return result
+                logger.info(f"Loading image from path: {img}")
+                img = np.array(Image.open(img))
+                logger.debug(f"Image loaded with shape: {img.shape}")
             except Exception as e:
-                print(f"GPU processing failed: {e}. Falling back to CPU.")
+                logger.error(f"Error loading image from path: {e}")
+                return None
         
-        # Fallback to CPU processing
-        result = pers2equi_cpu(img, output_height, 
-                               fov_h, yaw, pitch, roll)
-        return result
-    except Exception as e:
-        print(f"Error during processing: {e}")
-        return None
+        # Verify input image shape
+        if len(img.shape) != 3 or img.shape[2] != 3:
+            logger.warning(f"Expected 3-channel color image, got shape {img.shape}")
+            # Try to fix if grayscale
+            if len(img.shape) == 2:
+                logger.info("Converting grayscale to RGB")
+                img = np.stack((img,)*3, axis=-1)
+        
+        # To ensure computational stability
+        fov_h = max(0.1, min(179.9, fov_h))
+        logger.info(f"Processing with parameters: FOV={fov_h}°, yaw={yaw}°, pitch={pitch}°, roll={roll}°")
+        
+        try:
+            if use_gpu and HAS_CUDA:
+                logger.info("Attempting GPU processing")
+                try:
+                    result = pers2equi_gpu(img, output_height, 
+                                           fov_h, yaw, pitch, roll)
+                    logger.info("GPU processing completed successfully")
+                    return result
+                except Exception as e:
+                    logger.error(f"GPU processing failed: {e}. Falling back to CPU.")
+            else:
+                if use_gpu and not HAS_CUDA:
+                    logger.info("GPU requested but not available, using CPU")
+                else:
+                    logger.info("CPU processing requested")
+            
+            # Fallback to CPU processing
+            logger.info("Starting CPU processing")
+            result = pers2equi_cpu(img, output_height, 
+                                   fov_h, yaw, pitch, roll)
+            logger.info("CPU processing completed successfully")
+            return result
+        except Exception as e:
+            logger.error(f"Error during processing: {e}")
+            return None
+    finally:
+        # Restore original log level if it was changed
+        if original_level is not None:
+            logger.setLevel(original_level)

@@ -4,7 +4,12 @@ Utility functions for image projection transformations.
 
 import numpy as np
 import time
+import logging
 from numba import cuda
+from .logging_utils import setup_logger
+
+# Set up logger
+logger = setup_logger(__name__)
 
 def create_rotation_matrix(yaw, pitch, roll):
     """
@@ -69,9 +74,9 @@ def check_cuda_support():
     """Check if CUDA is available and return status."""
     has_cuda = cuda.is_available()
     if has_cuda:
-        print("CUDA support found: GPU acceleration available")
+        logger.info("CUDA support found: GPU acceleration available")
     else:
-        print("No compatible GPU detected, using CPU acceleration only")
+        logger.info("No compatible GPU detected, using CPU acceleration only")
     return has_cuda
 
 def timer(func):
@@ -80,6 +85,6 @@ def timer(func):
         start_time = time.time()
         result = func(*args, **kwargs)
         elapsed = time.time() - start_time
-        print(f"{func.__name__} completed in {elapsed:.2f} seconds.")
+        logger.info(f"{func.__name__} completed in {elapsed:.2f} seconds.")
         return result
     return wrapper
