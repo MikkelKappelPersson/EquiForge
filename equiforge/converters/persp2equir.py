@@ -1,31 +1,25 @@
-#!/usr/bin/env python3
 """
 Perspective to Equirectangular Converter
 
-This script converts a perspective image to equirectangular projection with optimized performance.
+This module converts perspective images to equirectangular projection with optimized performance.
 """
 
-import argparse
 import numpy as np
 from PIL import Image
 import os
-import sys
 import time
-from multiprocessing import Pool, cpu_count
 import warnings
+from multiprocessing import Pool, cpu_count
 from numba import jit, prange, cuda
+from ..utils.projection_utils import create_rotation_matrix, calculate_focal_length, check_cuda_support, timer
 
 # Check for CUDA support
-HAS_CUDA = cuda.is_available()
-if HAS_CUDA:
-    print("CUDA support found: GPU acceleration available")
-else:
-    print("No compatible GPU detected, using CPU acceleration only")
+HAS_CUDA = check_cuda_support()
 
 # Define CUDA kernel for GPU acceleration
 if HAS_CUDA:
     @cuda.jit
-    def equirect_gpu_kernel(img, equirect, output_width, output_height, 
+    def persp2equir_gpu_kernel(img, equirect, output_width, output_height, 
                          cx, cy, f_h, f_v, w, h, r_matrix):
         """CUDA kernel to convert pixels from perspective to equirectangular"""
         x, y = cuda.grid(2)
@@ -60,7 +54,7 @@ if HAS_CUDA:
                     equirect[y, x, 2] = img[py, px, 2]
 
 @jit(nopython=True, parallel=True)
-def equirect_cpu_kernel(img, equirect, output_width, output_height, 
+def persp2equir_cpu_kernel(img, equirect, output_width, output_height, 
                       y_start, y_end, cx, cy, f_h, f_v, w, h, r_matrix):
     """Process a range of rows with Numba optimization on CPU"""
     for y in prange(y_start, y_end):
@@ -102,55 +96,27 @@ def process_chunk(args):
     # Standard equirectangular aspect ratio is 2:1
     output_width = output_height * 2
     
-    # Calculate vertical FOV based on aspect ratio
-    aspect_ratio = w / h
-    fov_v = fov_h / aspect_ratio
-    
     # Convert angles to radians
-    fov_h_rad, fov_v_rad = np.radians(fov_h), np.radians(fov_v)
-    yaw_rad, pitch_rad, roll_rad = np.radians(yaw), np.radians(pitch), np.radians(roll)
+    fov_h_rad, yaw_rad, pitch_rad, roll_rad = map(np.radians, [fov_h, yaw, pitch, roll])
     
     # Calculate focal lengths
-    f_h = (w / 2) / np.tan(fov_h_rad / 2)
-    f_v = (h / 2) / np.tan(fov_v_rad / 2)
+    f_h, f_v = calculate_focal_length(w, h, fov_h_rad)
     
-    # Create rotation matrices
-    R_yaw = np.array([
-        [np.cos(yaw_rad), 0, np.sin(yaw_rad)],
-        [0, 1, 0],
-        [-np.sin(yaw_rad), 0, np.cos(yaw_rad)]
-    ])
-    
-    R_pitch = np.array([
-        [1, 0, 0],
-        [0, np.cos(pitch_rad), -np.sin(pitch_rad)],
-        [0, np.sin(pitch_rad), np.cos(pitch_rad)]
-    ])
-    
-    R_roll = np.array([
-        [np.cos(roll_rad), -np.sin(roll_rad), 0],
-        [np.sin(roll_rad), np.cos(roll_rad), 0],
-        [0, 0, 1]
-    ])
-    
-    # Combined rotation matrix
-    R = R_yaw @ R_pitch @ R_roll
+    # Get rotation matrix
+    R = create_rotation_matrix(yaw_rad, pitch_rad, roll_rad)
     
     # Create a chunk of the output image
     chunk = np.zeros((y_end - y_start, output_width, 3), dtype=np.uint8)
     
     # Use CPU kernel for processing the chunk
-    chunk = equirect_cpu_kernel(img, chunk, output_width, output_height, 
+    chunk = persp2equir_cpu_kernel(img, chunk, output_width, output_height, 
                               0, y_end - y_start, cx, cy, f_h, f_v, w, h, R)
     
     return chunk
 
-
-def perspective_to_equirectangular_parallel(img, output_height, 
-                                          fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0):
-    """
-    Multi-threaded conversion from perspective to equirectangular projection
-    """
+def persp2equir_cpu(img, output_height, 
+                  fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0):
+    """Multi-threaded conversion from perspective to equirectangular projection"""
     # Standard equirectangular aspect ratio is 2:1
     output_width = output_height * 2
     
@@ -209,23 +175,10 @@ def perspective_to_equirectangular_parallel(img, output_height,
         
     return equirect
 
-
-def perspective_to_equirectangular_gpu(img, output_height, 
-                                    fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0):
-    """
-    Convert perspective image to equirectangular projection using GPU acceleration
-    
-    Parameters:
-    - img: Input perspective image (numpy array)
-    - output_height: Height of output equirectangular image
-    - fov_h: Horizontal field of view in degrees
-    - yaw: Rotation around vertical axis (left/right) in degrees
-    - pitch: Rotation around horizontal axis (up/down) in degrees
-    - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
-    
-    Returns:
-    - Equirectangular image as numpy array
-    """
+@timer
+def persp2equir_gpu(img, output_height, 
+                 fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0):
+    """GPU-accelerated conversion from perspective to equirectangular projection"""
     # Standard equirectangular aspect ratio is 2:1
     output_width = output_height * 2
     
@@ -233,39 +186,14 @@ def perspective_to_equirectangular_gpu(img, output_height,
     h, w = img.shape[:2]
     cx, cy = w // 2, h // 2
     
-    # Calculate vertical FOV based on aspect ratio
-    aspect_ratio = w / h
-    fov_v = fov_h / aspect_ratio
-    
     # Convert angles to radians
-    fov_h_rad, fov_v_rad = np.radians(fov_h), np.radians(fov_v)
-    yaw_rad, pitch_rad, roll_rad = np.radians(yaw), np.radians(pitch), np.radians(roll)
+    fov_h_rad, yaw_rad, pitch_rad, roll_rad = map(np.radians, [fov_h, yaw, pitch, roll])
     
     # Calculate focal lengths
-    f_h = (w / 2) / np.tan(fov_h_rad / 2)
-    f_v = (h / 2) / np.tan(fov_v_rad / 2)
+    f_h, f_v = calculate_focal_length(w, h, fov_h_rad)
     
-    # Create rotation matrices
-    R_yaw = np.array([
-        [np.cos(yaw_rad), 0, np.sin(yaw_rad)],
-        [0, 1, 0],
-        [-np.sin(yaw_rad), 0, np.cos(yaw_rad)]
-    ])
-    
-    R_pitch = np.array([
-        [1, 0, 0],
-        [0, np.cos(pitch_rad), -np.sin(pitch_rad)],
-        [0, np.sin(pitch_rad), np.cos(pitch_rad)]
-    ])
-    
-    R_roll = np.array([
-        [np.cos(roll_rad), -np.sin(roll_rad), 0],
-        [np.sin(roll_rad), np.cos(roll_rad), 0],
-        [0, 0, 1]
-    ])
-    
-    # Combined rotation matrix
-    R = R_yaw @ R_pitch @ R_roll
+    # Get rotation matrix
+    R = create_rotation_matrix(yaw_rad, pitch_rad, roll_rad)
     
     # Create output equirectangular image
     equirect = np.zeros((output_height, output_width, 3), dtype=np.uint8)
@@ -282,7 +210,7 @@ def perspective_to_equirectangular_gpu(img, output_height,
     blocks_per_grid = (blocks_x, blocks_y)
     
     # Launch kernel
-    equirect_gpu_kernel[blocks_per_grid, threads_per_block](
+    persp2equir_gpu_kernel[blocks_per_grid, threads_per_block](
         d_img, d_equirect, output_width, output_height, 
         cx, cy, f_h, f_v, w, h, d_r_matrix
     )
@@ -292,9 +220,9 @@ def perspective_to_equirectangular_gpu(img, output_height,
     
     return equirect
 
-def perspective_to_equirectangular(img, output_height, 
-                                  fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-                                  use_gpu=True):
+def persp2equir(img, output_height, 
+              fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0,
+              use_gpu=True):
     """
     Convert perspective image to equirectangular projection
     
@@ -310,8 +238,6 @@ def perspective_to_equirectangular(img, output_height,
     Returns:
     - Equirectangular image as numpy array
     """
-    start_time = time.time()
-    
     # Handle file path input
     if isinstance(img, str):
         try:
@@ -320,9 +246,6 @@ def perspective_to_equirectangular(img, output_height,
         except Exception as e:
             print(f"Error loading image from path: {e}")
             return None
-    
-    # Standard equirectangular aspect ratio is 2:1
-    output_width = output_height * 2
     
     # Verify input image shape
     if len(img.shape) != 3 or img.shape[2] != 3:
@@ -337,86 +260,19 @@ def perspective_to_equirectangular(img, output_height,
     try:
         if use_gpu and HAS_CUDA:
             try:
-                result = perspective_to_equirectangular_gpu(img, output_height, 
-                                                            fov_h, yaw, pitch, roll)
+                result = persp2equir_gpu(img, output_height, 
+                                       fov_h, yaw, pitch, roll)
                 # Verify we have actual data
                 if np.sum(result) == 0:
                     raise ValueError("GPU processing returned an all-zero image. Falling back to CPU.")
-                print(f"GPU processing completed in {time.time() - start_time:.2f} seconds.")
                 return result
             except Exception as e:
                 print(f"GPU processing failed: {e}. Falling back to CPU.")
         
         # Fallback to CPU processing
-        result = perspective_to_equirectangular_parallel(img, output_height, 
-                                                         fov_h, yaw, pitch, roll)
-        print(f"CPU processing completed in {time.time() - start_time:.2f} seconds.")
+        result = persp2equir_cpu(img, output_height, 
+                               fov_h, yaw, pitch, roll)
         return result
     except Exception as e:
         print(f"Error during processing: {e}")
         return None
-
-def main():
-    # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Convert perspective image to equirectangular projection')
-    parser.add_argument('input', help='Input perspective image path')
-    parser.add_argument('output', help='Output equirectangular image path')
-    parser.add_argument('--fov', type=float, default=90.0, help='Horizontal field of view in degrees (default: 90.0)')
-    parser.add_argument('--height', type=int, default=2048, help='Output height (default: 2048)')
-    parser.add_argument('--yaw', type=float, default=0.0, help='Yaw rotation in degrees (default: 0.0)')
-    parser.add_argument('--pitch', type=float, default=0.0, help='Pitch rotation in degrees (default: 0.0)')
-    parser.add_argument('--roll', type=float, default=0.0, help='Roll rotation in degrees (default: 0.0)')
-    parser.add_argument('--cpu', action='store_true', help='Force CPU processing instead of GPU')
-    
-    args = parser.parse_args()
-    
-    # Check if input file exists
-    if not os.path.exists(args.input):
-        print(f"Error: Input file '{args.input}' does not exist")
-        return 1
-    
-    # Load input image
-    try:
-        print(f"Loading image: {args.input}")
-        perspective_image = np.array(Image.open(args.input))
-    except Exception as e:
-        print(f"Error loading image: {e}")
-        return 1
-    
-    # Calculate width based on standard 2:1 aspect ratio
-    output_width = args.height * 2
-    
-    # Display parameters
-    print(f"Input image: {args.input} ({perspective_image.shape[1]}x{perspective_image.shape[0]})")
-    print(f"Output size: {output_width}x{args.height} (2:1 aspect ratio)")
-    print(f"FOV: {args.fov}° (horizontal)")
-    print(f"Orientation: Yaw={args.yaw}°, Pitch={args.pitch}°, Roll={args.roll}°")
-    print(f"Processing mode: {'CPU' if args.cpu else 'GPU if available, otherwise CPU'}")
-    
-    # Convert image
-    equirectangular_image = perspective_to_equirectangular(
-        perspective_image,
-        args.height,
-        fov_h=args.fov,
-        yaw=args.yaw,
-        pitch=args.pitch,
-        roll=args.roll,
-        use_gpu=not args.cpu
-    )
-    
-    # Save result
-    try:
-        print(f"Saving equirectangular image to: {args.output}")
-        Image.fromarray(equirectangular_image).save(args.output)
-        print("Done!")
-    except Exception as e:
-        print(f"Error saving image: {e}")
-        return 1
-    
-    return 0
-
-
-if __name__ == "__main__":
-    # Suppress warning about invalid values (which can occur but are handled)
-    warnings.filterwarnings("ignore", category=RuntimeWarning)
-    sys.exit(main())
