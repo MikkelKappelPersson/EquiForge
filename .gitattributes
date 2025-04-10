@@ -1,0 +1,16 @@
+# SCM syntax highlighting & preventing 3-way merges
+pixi.lock merge=binary linguist-language=YAML linguist-generated=true
+
+# Normalize line endings for text files
+* text=auto
+
+# Handle binary files
+*.jpg binary
+*.png binary
+*.webp binary
+
+# Force LF line endings for Python files (good for cross-platform)
+*.py text eol=lf
+
+# Language overrides (if needed)
+*.ipynb linguist-language=Python
