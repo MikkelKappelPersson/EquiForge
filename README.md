@@ -11,7 +11,7 @@ A performant toolkit for equirectangular image processing and conversions.
 ## Installation
 
 ### Prerequisites
-- Python 3.6 or later
+- Python 3.8 or later
 - numpy
 - numba
 - Pillow
