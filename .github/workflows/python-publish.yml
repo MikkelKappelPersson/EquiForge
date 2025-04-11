@@ -25,12 +25,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.x"
+          
+      - name: Install packaging tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build twine pyproject-metadata
 
+      - name: Validate pyproject.toml
+        run: |
+          echo "Validating pyproject.toml with [project] table format..."
+          python -c "import tomli; config = tomli.load(open('pyproject.toml', 'rb')); assert 'project' in config, 'Missing [project] table in pyproject.toml'"
+          
       - name: Build release distributions
         run: |
-          # NOTE: put your own distribution build steps here.
-          python -m pip install build
-          python -m build
+          # Building package using modern pyproject.toml with [project] table
+          python -m build --sdist --wheel
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
@@ -45,17 +54,6 @@ jobs:
     permissions:
       # IMPORTANT: this permission is mandatory for trusted publishing
       id-token: write
-
-    # Dedicated environments with protections for publishing are strongly recommended.
-    # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
-    environment:
-      name: pypi
-      # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
-      # url: https://pypi.org/p/YOURPROJECT
-      #
-      # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
-      # ALTERNATIVE: exactly, uncomment the following line instead:
-      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
 
     steps:
       - name: Retrieve release distributions
