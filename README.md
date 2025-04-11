@@ -1,6 +1,20 @@
-# EquiForge
+<h1 align="center">
+    EquiForge
+</h1>
 
-A performant toolkit for equirectangular image processing and conversions.
+<h4 align="center">
+    A performant toolkit for equirectangular image processing and conversions
+</h4>
+
+
+<!--<img src=".img/equilib.png" alt="equilib" width="720"/>-->
+
+<div align="center">
+<!-- <a href="https://badge.fury.io/py/pyequilib"><img src="https://badge.fury.io/py/pyequilib.svg" alt="PyPI version"></a> -->
+<!-- <a href="https://pypi.org/project/pyequilib"><img src="https://img.shields.io/pypi/pyversions/pyequilib"></a> -->
+  <a href="https://github.com/MikkelKappelPersson/EquiForge/actions"><img src="https://github.com/MikkelKappelPersson/EquiForge/actions/workflows/python-package-tests.yml/badge.svg"></a>
+  <a href="https://github.com/MikkelKappelPersson/EquiForge/blob/main/LICENSE"><img alt="GitHub license" src="https://img.shields.io/github/license/mikkelkappelpersson/equiforge"></a>
+</div>
 
 ## Features
 
@@ -74,3 +88,7 @@ For more examples and detailed documentation, see the Jupyter notebooks included
 
 - [equilib](https://github.com/haruishi43/equilib)
 - [Perspective-and-Equirectangular](https://github.com/timy90022/Perspective-and-Equirectangular)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
