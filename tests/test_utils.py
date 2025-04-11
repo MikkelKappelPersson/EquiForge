@@ -17,9 +17,9 @@ class TestProjectionUtils:
         """Test conversion from cartesian to spherical coordinates"""
         # Adjust to test functions that actually exist
         # Test focal length calculation instead
-        fov_h_rad = np.radians(90)
+        fov_x_rad = np.radians(90)
         width, height = 100, 100
-        f_h, f_v = projection_utils.calculate_focal_length(width, height, fov_h_rad)
+        f_h, f_v = projection_utils.calculate_focal_length(width, height, fov_x_rad)
         
         # Check that focal lengths are reasonable
         assert f_h > 0

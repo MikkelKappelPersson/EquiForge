@@ -96,16 +96,16 @@ def process_chunk(args):
     img, y_start, y_end, output_height, params = args
     h, w = img.shape[:2]
     cx, cy = w // 2, h // 2
-    fov_h, yaw, pitch, roll = params
+    fov_x, yaw, pitch, roll = params
     
     # Standard equirectangular aspect ratio is 2:1
     output_width = output_height * 2
     
     # Convert angles to radians
-    fov_h_rad, yaw_rad, pitch_rad, roll_rad = map(np.radians, [fov_h, yaw, pitch, roll])
+    fov_x_rad, yaw_rad, pitch_rad, roll_rad = map(np.radians, [fov_x, yaw, pitch, roll])
     
     # Calculate focal lengths
-    f_h, f_v = calculate_focal_length(w, h, fov_h_rad)
+    f_h, f_v = calculate_focal_length(w, h, fov_x_rad)
     
     # Get rotation matrix
     R = create_rotation_matrix(yaw_rad, pitch_rad, roll_rad)
@@ -120,7 +120,7 @@ def process_chunk(args):
     return chunk
 
 def pers2equi_cpu(img, output_height, 
-                  fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0):
+                  fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0):
     """Multi-threaded conversion from perspective to equirectangular projection"""
     # Standard equirectangular aspect ratio is 2:1
     output_width = output_height * 2
@@ -142,7 +142,7 @@ def pers2equi_cpu(img, output_height,
     for i in range(num_processes):
         y_start = i * chunk_size
         y_end = min(y_start + chunk_size, output_height)
-        args_list.append((img, y_start, y_end, output_height, (fov_h, yaw, pitch, roll)))
+        args_list.append((img, y_start, y_end, output_height, (fov_x, yaw, pitch, roll)))
     
     # Create output equirectangular image
     equirect = np.zeros((output_height, output_width, 3), dtype=np.uint8)
@@ -185,7 +185,7 @@ def pers2equi_cpu(img, output_height,
 
 @timer
 def pers2equi_gpu(img, output_height, 
-                 fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0):
+                 fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0):
     """GPU-accelerated conversion from perspective to equirectangular projection"""
     # Standard equirectangular aspect ratio is 2:1
     output_width = output_height * 2
@@ -195,10 +195,10 @@ def pers2equi_gpu(img, output_height,
     cx, cy = w // 2, h // 2
     
     # Convert angles to radians
-    fov_h_rad, yaw_rad, pitch_rad, roll_rad = map(np.radians, [fov_h, yaw, pitch, roll])
+    fov_x_rad, yaw_rad, pitch_rad, roll_rad = map(np.radians, [fov_x, yaw, pitch, roll])
     
     # Calculate focal lengths
-    f_h, f_v = calculate_focal_length(w, h, fov_h_rad)
+    f_h, f_v = calculate_focal_length(w, h, fov_x_rad)
     
     # Get rotation matrix
     R = create_rotation_matrix(yaw_rad, pitch_rad, roll_rad)
@@ -232,7 +232,7 @@ def pers2equi_gpu(img, output_height,
     return equirect
 
 def pers2equi(img, output_height, 
-              fov_h=90.0, yaw=0.0, pitch=0.0, roll=0.0,
+              fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
               use_gpu=True, log_level=None):
     """
     Convert perspective image to equirectangular projection
@@ -240,7 +240,7 @@ def pers2equi(img, output_height,
     Parameters:
     - img: Input perspective image (numpy array or file path)
     - output_height: Height of output equirectangular image
-    - fov_h: Horizontal field of view in degrees
+    - fov_x: Horizontal field of view in degrees
     - yaw: Rotation around vertical axis (left/right) in degrees
     - pitch: Rotation around horizontal axis (up/down) in degrees
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
@@ -276,15 +276,15 @@ def pers2equi(img, output_height,
                 img = np.stack((img,)*3, axis=-1)
         
         # To ensure computational stability
-        fov_h = max(0.1, min(179.9, fov_h))
-        logger.info(f"Processing with parameters: FOV={fov_h}°, yaw={yaw}°, pitch={pitch}°, roll={roll}°")
+        fov_x = max(0.1, min(179.9, fov_x))
+        logger.info(f"Processing with parameters: FOV={fov_x}°, yaw={yaw}°, pitch={pitch}°, roll={roll}°")
         
         try:
             if use_gpu and HAS_CUDA:
                 logger.info("Attempting GPU processing")
                 try:
                     result = pers2equi_gpu(img, output_height, 
-                                           fov_h, yaw, pitch, roll)
+                                           fov_x, yaw, pitch, roll)
                     logger.info("GPU processing completed successfully")
                     return result
                 except Exception as e:
@@ -298,7 +298,7 @@ def pers2equi(img, output_height,
             # Fallback to CPU processing
             logger.info("Starting CPU processing")
             result = pers2equi_cpu(img, output_height, 
-                                   fov_h, yaw, pitch, roll)
+                                   fov_x, yaw, pitch, roll)
             logger.info("CPU processing completed successfully")
             return result
         except Exception as e:

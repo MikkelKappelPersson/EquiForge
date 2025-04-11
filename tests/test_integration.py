@@ -23,8 +23,8 @@ class TestIntegration:
     
     def test_full_pipeline(self, real_world_image):
         """Test a complete processing pipeline"""
-        # Fix: Use the correct parameter names - fov_h instead of fov, output_height required
-        equi = pers2equi(real_world_image, output_height=256, fov_h=120)
+        # Fix: Use the correct parameter names - fov_x instead of fov, output_height required
+        equi = pers2equi(real_world_image, output_height=256, fov_x=120)
         
         # Step 2: Generate multiple perspective views
         views = []
@@ -34,7 +34,7 @@ class TestIntegration:
                 equi, 
                 output_width=256, 
                 output_height=256, 
-                fov_h=90, 
+                fov_x=90, 
                 yaw=np.radians(angle), 
                 pitch=0
             )

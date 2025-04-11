@@ -3,8 +3,8 @@ requires = ["setuptools>=61", "wheel", "setuptools_scm[toml]>=6.0.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "equiforge"
-description = "A toolkit for equirectangular image processing"
+name = "EquiForge"
+description = "A toolkit for equirectangular image processing and conversions."
 authors = [
     {name = "Mikkel Kappel Persson", email = "mikkelkp@hotmail.com"},
 ]
@@ -27,8 +27,7 @@ dynamic = ["version"]
 Homepage = "https://github.com/mikkelkappelpersson/equiforge"
 
 [project.optional-dependencies]
-viz = ["matplotlib>=3.4.0"]
-dev = ["pytest>=6.0.0", "jupyter>=1.0.0", "matplotlib>=3.4.0"]
+dev = ["pytest>=6.0.0", "jupyter>=1.0.0", "matplotlib>=3.4.0", "matplotlib>=3.4.0"]
 cuda = ["cupy-cuda12x>=12.0.0"]
 
 [tool.setuptools_scm]

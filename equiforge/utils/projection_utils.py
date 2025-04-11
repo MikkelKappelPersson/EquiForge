@@ -49,24 +49,24 @@ def create_rotation_matrix(yaw, pitch, roll):
     # This ensures roll only rotates around the viewing axis
     return R_roll @ R_pitch @ R_yaw
 
-def calculate_focal_length(width, height, fov_h_rad):
+def calculate_focal_length(width, height, fov_x_rad):
     """
     Calculate focal lengths based on image dimensions and field of view.
     
     Parameters:
     - width, height: Image dimensions
-    - fov_h_rad: Horizontal field of view in radians
+    - fov_x_rad: Horizontal field of view in radians
     
     Returns:
     - Tuple of (horizontal focal length, vertical focal length)
     """
     # Calculate vertical FOV based on aspect ratio
     aspect_ratio = width / height
-    fov_v_rad = fov_h_rad / aspect_ratio
+    fov_y_rad = fov_x_rad / aspect_ratio
     
     # Calculate focal lengths
-    f_h = (width / 2) / np.tan(fov_h_rad / 2)
-    f_v = (height / 2) / np.tan(fov_v_rad / 2)
+    f_h = (width / 2) / np.tan(fov_x_rad / 2)
+    f_v = (height / 2) / np.tan(fov_y_rad / 2)
     
     return f_h, f_v
 

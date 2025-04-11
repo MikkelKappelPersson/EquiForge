@@ -29,7 +29,7 @@ class TestConverters:
     
     def test_pers2equi_basic_conversion(self, sample_perspective_image):
         """Test basic conversion from perspective to equirectangular"""
-        equi_img = pers2equi(sample_perspective_image, output_height=100, fov_h=90)
+        equi_img = pers2equi(sample_perspective_image, output_height=100, fov_x=90)
         
         # Basic checks
         assert equi_img is not None
@@ -43,7 +43,7 @@ class TestConverters:
             sample_equirectangular_image, 
             output_width=100,
             output_height=100,
-            fov_h=90
+            fov_x=90
         )
         
         # Basic checks
@@ -54,13 +54,13 @@ class TestConverters:
     
     def test_roundtrip_conversion(self, sample_perspective_image):
         """Test that converting to equi and back preserves image (approximately)"""
-        equi = pers2equi(sample_perspective_image, output_height=100, fov_h=90)
+        equi = pers2equi(sample_perspective_image, output_height=100, fov_x=90)
         
         pers_restored = equi2pers(
             equi, 
             output_width=100,
             output_height=100,
-            fov_h=90
+            fov_x=90
         )
         
         # Images should be approximately equal in the center region
@@ -81,14 +81,14 @@ class TestConverters:
         """Test that functions properly handle invalid inputs"""
         # Test with invalid FOV
         test_img = np.ones((100, 100, 3), dtype=np.uint8) * 128
-        result = pers2equi(test_img, output_height=100, fov_h=370)
+        result = pers2equi(test_img, output_height=100, fov_x=370)
         assert result is not None
         assert isinstance(result, np.ndarray)
         
         # Test with small image dimensions
         small_img = np.ones((10, 10, 3), dtype=np.uint8) * 128
         try:
-            result = equi2pers(small_img, output_width=100, output_height=100, fov_h=90)
+            result = equi2pers(small_img, output_width=100, output_height=100, fov_x=90)
             if result is not None:
                 assert isinstance(result, np.ndarray)
                 assert result.shape == (100, 100, 3)
