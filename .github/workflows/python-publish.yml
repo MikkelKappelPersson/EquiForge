@@ -35,6 +35,13 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install build twine pyproject-metadata
 
+      - name: Clean previous build artifacts
+        run: |
+          # Remove any existing .egg-info directories that might cause conflicts
+          find . -type d -name "*.egg-info" -exec rm -rf {} +
+          # Also clean up any previous build directories
+          rm -rf build dist
+          
       - name: Validate pyproject.toml
         run: |
           echo "Validating pyproject.toml with [project] table format..."
