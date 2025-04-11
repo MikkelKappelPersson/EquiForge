@@ -6,7 +6,7 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
-name: Upload Python Package
+name: Upload Python Package PyPI
 
 on:
   push:
@@ -72,6 +72,19 @@ jobs:
         with:
           name: release-dists
           path: dist/
+
+      - name: Display trusted publisher info
+        run: |
+          echo "==== TRUSTED PUBLISHER INFORMATION ===="
+          echo "If publishing fails, you need to set up trusted publishing on PyPI:"
+          echo "1. Go to https://pypi.org/manage/account/publishing/"
+          echo "2. Add a new pending publisher with these values:"
+          echo "   - Owner: MikkelKappelPersson"
+          echo "   - Repository: EquiForge"
+          echo "   - Workflow name: Upload-Python-Package-PyPI.yml"
+          echo "   - Environment: (leave blank for default)"
+          echo "3. See full instructions at: https://docs.pypi.org/trusted-publishers/adding/"
+          echo "============================================"
 
       - name: Publish release distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
