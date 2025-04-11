@@ -1,0 +1,9 @@
+[build-system]
+requires = ["setuptools>=42", "wheel", "setuptools_scm[toml]>=6.0.1"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+# Use the format v{tag} for version tags
+version_scheme = "guess-next-dev"
+local_scheme = "node-and-date"
+write_to = "equiforge/_version.py"

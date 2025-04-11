@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="equiforge",
-    version="0.1.0",
+    use_scm_version=True,
     packages=find_packages(),
     install_requires=[
         "numpy>=1.20.0",
@@ -10,11 +10,9 @@ setup(
         "Pillow>=8.0.0",
         "numba>=0.53.0",
     ],
-    entry_points={
-        'console_scripts': [
-            'pers2equi=equiforge.cli:main',
-        ],
-    },
+    setup_requires=[
+        "setuptools_scm>=6.0.1",
+    ],
     author="Mikkel Kappel Persson",
     author_email="mikkelkp@hotmail.com",
     description="A toolkit for equirectangular image processing",
