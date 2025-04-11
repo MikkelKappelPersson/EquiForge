@@ -6,10 +6,15 @@ setup(
     packages=find_packages(),
     install_requires=[
         "numpy>=1.20.0",
-        "matplotlib>=3.4.0",
-        "Pillow>=8.0.0",
         "numba>=0.53.0",
+        "Pillow>=8.0.0",
     ],
+    extras_require={
+        'viz': ["matplotlib>=3.4.0"],  # For visualization and notebooks
+        'dev': ["pytest>=6.0.0", "jupyter>=1.0.0", "matplotlib>=3.4.0"],  # Development tools
+        'cuda': ["cupy-cuda12x>=12.0.0"],  # GPU acceleration with CUDA
+        # Note: CUDA toolkit (nvcc, nvrtc) must be installed separately
+    },
     setup_requires=[
         "setuptools_scm>=6.0.1",
     ],

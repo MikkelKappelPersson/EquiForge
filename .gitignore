@@ -1,26 +1,40 @@
-# Python
+# Python bytecode
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment
+.env
+.venv
 env/
 venv/
 ENV/
-.env
-dist/
-build/
-*.egg-info/
 
-# Jupyter Notebooks
-.ipynb_checkpoints/
-profile_default/
-ipython_config.py
+# Pixi specific
+pixi.lock
+# Note: Keep pixi.toml in version control
 
-# Pixi
-.pixi/
-
-# IDE/Editor
+# IDE specific files
 .idea/
 .vscode/
 *.swp

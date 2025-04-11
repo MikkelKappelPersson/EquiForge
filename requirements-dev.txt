@@ -1,0 +1,7 @@
+# Development tools
+pytest>=6.0.0
+jupyter>=1.0.0
+matplotlib>=3.4.0
+
+# Core dependencies (included to ensure dev environment has everything)
+-r requirements.txt
