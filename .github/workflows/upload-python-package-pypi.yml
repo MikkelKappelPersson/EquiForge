@@ -8,10 +8,10 @@
 
 name: upload python package pypi
 
-on: [push]
+on:
 
-  # release:
-  #   types: [published]
+  release:
+    types: [published]
 
 
 

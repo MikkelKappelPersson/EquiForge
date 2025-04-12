@@ -29,11 +29,10 @@ Homepage = "https://github.com/mikkelkappelpersson/equiforge"
 
 [project.optional-dependencies]
 dev = ["pytest>=6.0.0", "jupyter>=1.0.0", "matplotlib>=3.4.0", "matplotlib>=3.4.0"]
-cuda = ["cupy-cuda12x>=12.0.0"]
 
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
-local_scheme = "no-local-version"  # Changed from "node-and-date"
+local_scheme = "no-local-version"
 version_file = "equiforge/_version.py"
 
 [tool.setuptools]
