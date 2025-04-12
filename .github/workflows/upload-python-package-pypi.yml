@@ -8,13 +8,12 @@
 
 name: upload python package pypi
 
-on:
-  release:
-    types: [published]
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+on: [push]
+
+  # release:
+  #   types: [published]
+
+
 
 permissions:
   contents: read
