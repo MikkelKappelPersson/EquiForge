@@ -88,3 +88,7 @@ For more examples and detailed documentation, see the Jupyter notebooks included
 
 - [equilib](https://github.com/haruishi43/equilib)
 - [Perspective-and-Equirectangular](https://github.com/timy90022/Perspective-and-Equirectangular)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
