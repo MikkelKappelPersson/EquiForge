@@ -34,7 +34,7 @@ cuda = ["cupy-cuda12x>=12.0.0"]
 [tool.setuptools_scm]
 version_scheme = "guess-next-dev"
 local_scheme = "no-local"  # Changed from "node-and-date"
-write_to = "equiforge/_version.py"
+version_file = "equiforge/_version.py"
 
 [tool.setuptools]
 packages = ["equiforge"]

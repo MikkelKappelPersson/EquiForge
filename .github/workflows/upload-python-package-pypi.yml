@@ -26,6 +26,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # This fetches all history and tags
+          fetch-tags: true  # Explicitly fetch all tags
 
       - uses: actions/setup-python@v5
         with:
