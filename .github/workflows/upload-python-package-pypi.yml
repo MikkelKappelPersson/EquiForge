@@ -6,7 +6,7 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
-name: Upload Python Package PyPI
+name: upload python package pypi
 
 on:
   release:
@@ -77,7 +77,7 @@ jobs:
           echo "2. Add a new pending publisher with these values:"
           echo "   - Owner: MikkelKappelPersson"
           echo "   - Repository: EquiForge"
-          echo "   - Workflow name: Upload-Python-Package-PyPI.yml"
+          echo "   - Workflow name: upload-python-package-pypi.yml"
           echo "   - Environment: (leave blank for default)"
           echo "3. See full instructions at: https://docs.pypi.org/trusted-publishers/adding/"
           echo "============================================"
