@@ -1,6 +1,6 @@
-<h1 align="center">
-    EquiForge
-</h1>
+<p align="center">
+    <img src="src/Logo+Name.svg" alt="EquiForge Logo" width="500"/>
+</p>
 
 <h4 align="center">
     A performant toolkit for equirectangular image processing and conversions
@@ -10,8 +10,8 @@
 <!--<img src=".img/equilib.png" alt="equilib" width="720"/>-->
 
 <div align="center">
-<!-- <a href="https://badge.fury.io/py/pyequilib"><img src="https://badge.fury.io/py/pyequilib.svg" alt="PyPI version"></a> -->
-<!-- <a href="https://pypi.org/project/pyequilib"><img src="https://img.shields.io/pypi/pyversions/pyequilib"></a> -->
+<a href="https://badge.fury.io/py/equiforge"><img src="https://badge.fury.io/py/equiforge.svg" alt="PyPI version"></a>
+<a href="https://pypi.org/project/equiforge"><img src="https://img.shields.io/pypi/pyversions/equiforge"></a>
   <a href="https://github.com/MikkelKappelPersson/EquiForge/actions"><img src="https://github.com/MikkelKappelPersson/EquiForge/actions/workflows/python-package-tests.yml/badge.svg"></a>
   <a href="https://github.com/MikkelKappelPersson/EquiForge/blob/main/LICENSE"><img alt="GitHub license" src="https://img.shields.io/github/license/mikkelkappelpersson/equiforge"></a>
 </div>
@@ -30,18 +30,12 @@
 - numba
 - Pillow
 
-
 ### Using `pip`:
 
 ```bash
 pip install equiforge
 ```
 
-### Using `conda`:
-
-```bash
-conda install -c conda-forge equiforge
-```
 ### CUDA GPU Support
 To enable CUDA GPU support, install the [latest graphics drivers from NVIDIA](https://www.nvidia.com/en-us/drivers/) for your platform. Then install the CUDA Toolkit package.
 
