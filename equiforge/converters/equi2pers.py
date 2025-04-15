@@ -13,7 +13,7 @@ import logging
 from multiprocessing import Pool, cpu_count
 from numba import jit, prange, cuda
 from ..utils.projection_utils import create_rotation_matrix, calculate_focal_length, check_cuda_support, timer
-from ..utils.logging_utils import setup_logger
+from ..utils.logging_utils import setup_logger, set_log_level
 
 # Set up logger
 logger = setup_logger(__name__)
@@ -242,7 +242,7 @@ def equi2pers_gpu(equi, output_width, output_height,
 
 def equi2pers(img, output_width, output_height,
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True, log_level=None):
+              use_gpu=True, log_level="SILENT"):
     """
     Convert equirectangular image to perspective projection
     
@@ -255,16 +255,20 @@ def equi2pers(img, output_width, output_height,
     - pitch: Rotation around horizontal axis (up/down) in degrees
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
     - use_gpu: Whether to use GPU acceleration if available
-    - log_level: Optional override for log level during this conversion
+    - log_level: Optional override for log level during this conversion (default: "SILENT")
     
     Returns:
     - Perspective image as numpy array
     """
-    # Set temporary log level if specified
-    original_level = None
-    if log_level is not None:
-        original_level = logger.level
-        logger.setLevel(log_level)
+    # Set temporary log level for this module's logger
+    original_level = set_log_level(logger, log_level)
+    
+    # Also set the same log level for the projection_utils logger that's used by the timer decorator
+    projection_logger = logging.getLogger('equiforge.utils.projection_utils')
+    original_proj_level = None
+    if projection_logger:
+        original_proj_level = projection_logger.level
+        set_log_level(projection_logger, log_level)
     
     try:
         # Handle file path input
@@ -316,6 +320,8 @@ def equi2pers(img, output_width, output_height,
             logger.error(f"Error during processing: {e}")
             return None
     finally:
-        # Restore original log level if it was changed
+        # Restore original log levels
         if original_level is not None:
             logger.setLevel(original_level)
+        if original_proj_level is not None and projection_logger:
+            projection_logger.setLevel(original_proj_level)

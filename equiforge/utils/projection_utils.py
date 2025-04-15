@@ -6,7 +6,7 @@ import numpy as np
 import time
 import logging
 from numba import cuda
-from .logging_utils import setup_logger
+from .logging_utils import setup_logger, SILENT
 
 # Set up logger
 logger = setup_logger(__name__)
@@ -70,13 +70,22 @@ def calculate_focal_length(width, height, fov_x_rad):
     
     return f_h, f_v
 
-def check_cuda_support():
-    """Check if CUDA is available and return status."""
+def check_cuda_support(quiet=True):
+    """
+    Check if CUDA is available and return status.
+    
+    Parameters:
+    - quiet: If True, suppresses log output during initialization
+    
+    Returns:
+    - Boolean indicating CUDA availability
+    """
     has_cuda = cuda.is_available()
-    if has_cuda:
-        logger.info("CUDA support found: GPU acceleration available")
-    else:
-        logger.info("No compatible GPU detected, using CPU acceleration only")
+    if not quiet:
+        if has_cuda:
+            logger.info("CUDA support found: GPU acceleration available")
+        else:
+            logger.info("No compatible GPU detected, using CPU acceleration only")
     return has_cuda
 
 def timer(func):
@@ -85,6 +94,10 @@ def timer(func):
         start_time = time.time()
         result = func(*args, **kwargs)
         elapsed = time.time() - start_time
-        logger.info(f"{func.__name__} completed in {elapsed:.2f} seconds.")
+        
+        # Check the package root logger level instead of just this module's logger
+        package_logger = logging.getLogger('equiforge')
+        if package_logger.level < SILENT:
+            logger.info(f"{func.__name__} completed in {elapsed:.2f} seconds.")
         return result
     return wrapper

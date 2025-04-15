@@ -34,4 +34,5 @@ else:
     # Release version
     default_log_level = logging.WARNING
 
-set_package_log_level(default_log_level)
+# Use silent level during initial import to avoid logs unless users specifically enable them
+set_package_log_level(default_log_level, show_initial_message=False)
