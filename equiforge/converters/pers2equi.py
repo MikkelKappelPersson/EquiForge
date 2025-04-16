@@ -85,7 +85,7 @@ if HAS_CUDA:
 
 @jit(nopython=True, parallel=True)
 def pers2equi_cpu_kernel(img, equirect, output_width, output_height, 
-                      x_start, x_end, params, sampling_method="nearest"):
+                      x_start, x_end, params, sampling_method="bilinear"):
     """Process a range of columns with Numba optimization on CPU"""
     for x in prange(x_start, x_end):
         for y in range(output_height):
@@ -144,7 +144,7 @@ def process_chunk(args):
     return chunk, x_start, x_end
 
 def pers2equi_cpu(img, output_height, 
-                  fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, sampling_method="nearest"):
+                  fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, sampling_method="bilinear"):
     """Multi-threaded conversion from perspective to equirectangular projection"""
     # Standard equirectangular aspect ratio is 2:1
     output_width = output_height * 2
@@ -208,7 +208,7 @@ def pers2equi_cpu(img, output_height,
 
 @timer
 def pers2equi_gpu(img, output_height, 
-                 fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, sampling_method="nearest"):
+                 fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, sampling_method="bilinear"):
     """GPU-accelerated conversion from perspective to equirectangular projection"""
     # Standard equirectangular aspect ratio is 2:1
     output_width = output_height * 2
@@ -259,7 +259,7 @@ def pers2equi_gpu(img, output_height,
 
 def pers2equi(img, output_height, 
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True, sampling_method="nearest", log_level="SILENT"):
+              use_gpu=True, sampling_method="bilinear", log_level="SILENT"):
     """
     Convert perspective image to equirectangular projection
     

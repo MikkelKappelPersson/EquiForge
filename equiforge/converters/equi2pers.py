@@ -74,7 +74,7 @@ if HAS_CUDA:
 
 @jit(nopython=True, parallel=True)
 def equi2pers_cpu_kernel(equi, perspective, output_width, output_height, 
-                       x_start, x_end, cx, cy, f_h, f_v, equi_w, equi_h, r_matrix_inv, sampling_method="nearest"):
+                       x_start, x_end, cx, cy, f_h, f_v, equi_w, equi_h, r_matrix_inv, sampling_method="bilinear"):
     """Process a range of columns with Numba optimization on CPU"""
     for x in prange(x_start, x_end):
         for y in range(output_height):
@@ -142,7 +142,7 @@ def process_chunk(args):
 
 def equi2pers_cpu(equi, output_width, output_height,
                   fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, 
-                  sampling_method="nearest"):
+                  sampling_method="bilinear"):
     """Multi-threaded conversion from equirectangular to perspective projection"""
     # Validation to ensure image has proper shape
     if len(equi.shape) != 3 or equi.shape[2] != 3:
@@ -243,7 +243,7 @@ def equi2pers_gpu(equi, output_width, output_height,
 
 def equi2pers(img, output_width, output_height,
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True, sampling_method="nearest", log_level="SILENT"):
+              use_gpu=True, sampling_method="bilinear", log_level="SILENT"):
     """
     Convert equirectangular image to perspective projection
     
@@ -256,7 +256,7 @@ def equi2pers(img, output_width, output_height,
     - pitch: Rotation around horizontal axis (up/down) in degrees
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
     - use_gpu: Whether to use GPU acceleration if available
-    - sampling_method: Sampling method for pixel interpolation (default: "nearest")
+    - sampling_method: Sampling method for pixel interpolation (default: "bilinear")
     - log_level: Optional override for log level during this conversion (default: "SILENT")
     
     Returns:
