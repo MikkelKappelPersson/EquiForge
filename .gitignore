@@ -31,8 +31,7 @@ venv/
 ENV/
 
 # Pixi specific
-# pixi.lock
-# Note: Keep pixi.toml in version control
+pixi.lock
 
 # IDE specific files
 .idea/
