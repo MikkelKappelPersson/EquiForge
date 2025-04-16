@@ -14,6 +14,7 @@ from multiprocessing import Pool, cpu_count
 from numba import jit, prange, cuda
 from ..utils.projection_utils import create_rotation_matrix, calculate_focal_length, check_cuda_support, timer
 from ..utils.logging_utils import setup_logger, set_log_level
+from ..utils.sampling import sample_image
 
 # Set up logger
 logger = setup_logger(__name__)
@@ -73,7 +74,7 @@ if HAS_CUDA:
 
 @jit(nopython=True, parallel=True)
 def equi2pers_cpu_kernel(equi, perspective, output_width, output_height, 
-                       x_start, x_end, cx, cy, f_h, f_v, equi_w, equi_h, r_matrix_inv):
+                       x_start, x_end, cx, cy, f_h, f_v, equi_w, equi_h, r_matrix_inv, sampling_method="nearest"):
     """Process a range of columns with Numba optimization on CPU"""
     for x in prange(x_start, x_end):
         for y in range(output_height):
@@ -105,16 +106,14 @@ def equi2pers_cpu_kernel(equi, perspective, output_width, output_height,
             equi_x = int((theta + np.pi) / (2 * np.pi) * equi_w) % equi_w
             equi_y = int((np.pi/2 - phi) / np.pi * equi_h) % equi_h  # Standard mapping for equirectangular
             
-            # Copy pixel values
-            perspective[y, x, 0] = equi[equi_y, equi_x, 0]
-            perspective[y, x, 1] = equi[equi_y, equi_x, 1]
-            perspective[y, x, 2] = equi[equi_y, equi_x, 2]
+            # Use sampling function for pixel assignment
+            perspective[y, x] = sample_image(equi, equi_y, equi_x, sampling_method)
     
     return perspective
 
 def process_chunk(args):
     """Process a horizontal chunk of the perspective image"""
-    equi, x_start, x_end, output_width, output_height, params = args
+    equi, x_start, x_end, output_width, output_height, params, sampling_method = args
     equi_h, equi_w = equi.shape[:2]
     fov_x, yaw, pitch, roll = params
     
@@ -137,12 +136,13 @@ def process_chunk(args):
     
     # Use CPU kernel for processing the chunk
     chunk = equi2pers_cpu_kernel(equi, chunk, output_width, output_height, 
-                              0, x_end - x_start, cx, cy, f_h, f_v, equi_w, equi_h, R_inv)
+                              0, x_end - x_start, cx, cy, f_h, f_v, equi_w, equi_h, R_inv, sampling_method)
     
     return chunk, x_start, x_end
 
 def equi2pers_cpu(equi, output_width, output_height,
-                  fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0):
+                  fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, 
+                  sampling_method="nearest"):
     """Multi-threaded conversion from equirectangular to perspective projection"""
     # Validation to ensure image has proper shape
     if len(equi.shape) != 3 or equi.shape[2] != 3:
@@ -161,7 +161,8 @@ def equi2pers_cpu(equi, output_width, output_height,
     for i in range(num_processes):
         x_start = i * chunk_size
         x_end = min(x_start + chunk_size, output_width)
-        args_list.append((equi, x_start, x_end, output_width, output_height, (fov_x, yaw, pitch, roll)))
+        args_list.append((equi, x_start, x_end, output_width, output_height, 
+                         (fov_x, yaw, pitch, roll), sampling_method))
     
     # Create output perspective image
     perspective = np.zeros((output_height, output_width, 3), dtype=np.uint8)
@@ -242,7 +243,7 @@ def equi2pers_gpu(equi, output_width, output_height,
 
 def equi2pers(img, output_width, output_height,
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True, log_level="SILENT"):
+              use_gpu=True, sampling_method="nearest", log_level="SILENT"):
     """
     Convert equirectangular image to perspective projection
     
@@ -255,6 +256,7 @@ def equi2pers(img, output_width, output_height,
     - pitch: Rotation around horizontal axis (up/down) in degrees
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
     - use_gpu: Whether to use GPU acceleration if available
+    - sampling_method: Sampling method for pixel interpolation (default: "nearest")
     - log_level: Optional override for log level during this conversion (default: "SILENT")
     
     Returns:
@@ -313,7 +315,7 @@ def equi2pers(img, output_width, output_height,
             # Fallback to CPU processing
             logger.info("Starting CPU processing")
             result = equi2pers_cpu(img, output_width, output_height,
-                                  fov_x, yaw, pitch, roll)
+                                  fov_x, yaw, pitch, roll, sampling_method)
             logger.info("CPU processing completed successfully")
             return result
         except Exception as e:
