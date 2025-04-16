@@ -53,3 +53,6 @@ tmp/
 
 # Generated version file
 equiforge/_version.py
+
+# Ignore Dev_Notebook.ipynb for the main branch
+[branch=main]Dev_Notebook.ipynb
