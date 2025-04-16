@@ -14,3 +14,6 @@ pixi.lock merge=binary linguist-language=YAML linguist-generated=true
 
 # Language overrides (if needed)
 *.ipynb linguist-language=Python
+
+# Safety measure for the notebook (complementing skip-worktree)
+Dev_Notebook.ipynb merge=ours
