@@ -13,8 +13,6 @@ on:
   release:
     types: [published]
 
-
-
 permissions:
   contents: read
 
@@ -48,6 +46,15 @@ jobs:
         run: |
           echo "Validating pyproject.toml with [project] table format..."
           python -c "import tomli; config = tomli.load(open('pyproject.toml', 'rb')); assert 'project' in config, 'Missing [project] table in pyproject.toml'"
+          
+      - name: Debug version information
+        run: |
+          echo "Current git status:"
+          git status
+          echo "Current git describe:"
+          git describe --tags
+          echo "Version that setuptools_scm sees:"
+          python -c "from setuptools_scm import get_version; print(f'Version: {get_version()}')"
           
       - name: Build release distributions
         run: |

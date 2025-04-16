@@ -50,3 +50,6 @@ Thumbs.db
 # Any temporary or cache directories
 .cache/
 tmp/
+
+# Generated version file
+equiforge/_version.py
