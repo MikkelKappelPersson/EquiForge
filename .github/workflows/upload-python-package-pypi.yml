@@ -9,7 +9,6 @@
 name: upload python package pypi
 
 on:
-
   release:
     types: [published]
 
@@ -24,7 +23,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # This fetches all history and tags
-          fetch-tags: true  # Explicitly fetch all tags
 
       - uses: actions/setup-python@v5
         with:
@@ -33,28 +31,12 @@ jobs:
       - name: Install packaging tools
         run: |
           python -m pip install --upgrade pip
-          python -m pip install build twine pyproject-metadata tomli setuptools_scm
+          python -m pip install build twine setuptools_scm
 
       - name: Clean previous build artifacts
         run: |
-          # Remove any existing .egg-info directories that might cause conflicts
           find . -type d -name "*.egg-info" -exec rm -rf {} +
-          # Also clean up any previous build directories
           rm -rf build dist
-          
-      - name: Validate pyproject.toml
-        run: |
-          echo "Validating pyproject.toml with [project] table format..."
-          python -c "import tomli; config = tomli.load(open('pyproject.toml', 'rb')); assert 'project' in config, 'Missing [project] table in pyproject.toml'"
-          
-      - name: Debug version information
-        run: |
-          echo "Current git status:"
-          git status
-          echo "Current git describe:"
-          git describe --tags
-          echo "Version that setuptools_scm sees:"
-          python -c "from setuptools_scm import get_version; print(f'Version: {get_version()}')"
           
       - name: Force version from tag
         id: set_version
@@ -74,10 +56,6 @@ jobs:
         env:
           SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.set_version.outputs.version }}
         run: |
-          # Show the version file we created
-          cat equiforge/_version.py
-          
-          # Build with the forced version
           python -m build --sdist --wheel
 
       - name: Upload distributions
@@ -88,11 +66,9 @@ jobs:
 
   pypi-publish:
     runs-on: ubuntu-latest
-    needs:
-      - release-build
+    needs: [release-build]
     permissions:
-      # IMPORTANT: this permission is mandatory for trusted publishing
-      id-token: write
+      id-token: write  # Required for trusted publishing
 
     steps:
       - name: Retrieve release distributions
@@ -100,19 +76,6 @@ jobs:
         with:
           name: release-dists
           path: dist/
-
-      - name: Display trusted publisher info
-        run: |
-          echo "==== TRUSTED PUBLISHER INFORMATION ===="
-          echo "If publishing fails, you need to set up trusted publishing on PyPI:"
-          echo "1. Go to https://pypi.org/manage/account/publishing/"
-          echo "2. Add a new pending publisher with these values:"
-          echo "   - Owner: MikkelKappelPersson"
-          echo "   - Repository: EquiForge"
-          echo "   - Workflow name: upload-python-package-pypi.yml"
-          echo "   - Environment: (leave blank for default)"
-          echo "3. See full instructions at: https://docs.pypi.org/trusted-publishers/adding/"
-          echo "============================================"
 
       - name: Publish release distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
