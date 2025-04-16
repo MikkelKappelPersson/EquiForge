@@ -16,4 +16,4 @@ pixi.lock merge=binary linguist-language=YAML linguist-generated=true
 *.ipynb linguist-language=Python
 
 # Ignore certain files from being considered for diff/merge
-Dev_Notebook.ipynb filter=main-branch-ignore
+Notebook_Dev.ipynb filter=main-branch-ignore
