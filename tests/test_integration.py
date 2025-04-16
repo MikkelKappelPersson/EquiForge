@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-# Fix: Import the converter functions directly from their modules
+# Import the converter functions directly from their modules
 from equiforge.converters.equi2pers import equi2pers
 from equiforge.converters.pers2equi import pers2equi
 from equiforge.utils import projection_utils
@@ -23,21 +23,33 @@ class TestIntegration:
     
     def test_full_pipeline(self, real_world_image):
         """Test a complete processing pipeline"""
-        # Fix: Use the correct parameter names - fov_x instead of fov, output_height required
-        equi = pers2equi(real_world_image, output_height=256, fov_x=120)
+        # Ensure all required parameters are provided
+        equi = pers2equi(
+            img=real_world_image, 
+            output_height=256, 
+            fov_x=120,
+            pitch=0.0,
+            yaw=0.0, 
+            roll=0.0
+        )
+        
+        assert equi is not None, "pers2equi returned None"
         
         # Step 2: Generate multiple perspective views
         views = []
         for angle in [0, 90, 180, 270]:
-            # Fix: Use correct parameter names - yaw instead of theta
+            # Use correct parameter names and provide all required parameters
             view = equi2pers(
-                equi, 
+                img=equi, 
                 output_width=256, 
                 output_height=256, 
                 fov_x=90, 
-                yaw=np.radians(angle), 
-                pitch=0
+                yaw=np.radians(angle),  # Convert to radians
+                pitch=0.0,
+                roll=0.0
             )
+            
+            assert view is not None, f"equi2pers returned None for angle {angle}"
             views.append(view)
             
         # Verify we have the expected number of output views
@@ -45,4 +57,4 @@ class TestIntegration:
         
         # All views should have the same dimensions
         for view in views:
-            assert view.shape == views[0].shape
+            assert view.shape == (256, 256, 3), f"View has incorrect shape: {view.shape}"
