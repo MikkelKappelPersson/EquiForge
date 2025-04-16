@@ -56,9 +56,19 @@ jobs:
           echo "Version that setuptools_scm sees:"
           python -c "from setuptools_scm import get_version; print(f'Version: {get_version()}')"
           
+      - name: Force version from tag
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
+          # Remove 'v' prefix if present
+          VERSION=${TAG#v}
+          echo "Setting version to $VERSION"
+          # Create a version override to prevent setuptools_scm from calculating it
+          echo "version = '$VERSION'" > version.py
+          export SETUPTOOLS_SCM_PRETEND_VERSION=$VERSION
+          
       - name: Build release distributions
         run: |
-          # Building package using modern pyproject.toml with [project] table
+          # Use the environment variable set in previous step
           python -m build --sdist --wheel
 
       - name: Upload distributions
