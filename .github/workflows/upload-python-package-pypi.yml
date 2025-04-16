@@ -57,18 +57,27 @@ jobs:
           python -c "from setuptools_scm import get_version; print(f'Version: {get_version()}')"
           
       - name: Force version from tag
+        id: set_version
         run: |
           TAG=$(git describe --tags --abbrev=0)
-          # Remove 'v' prefix if present
           VERSION=${TAG#v}
           echo "Setting version to $VERSION"
-          # Create a version override to prevent setuptools_scm from calculating it
-          echo "version = '$VERSION'" > version.py
-          export SETUPTOOLS_SCM_PRETEND_VERSION=$VERSION
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          
+          # Create version file
+          mkdir -p equiforge
+          echo "# version override" > equiforge/_version.py
+          echo "__version__ = version = '$VERSION'" >> equiforge/_version.py
+          echo "__version_tuple__ = version_tuple = tuple('$VERSION'.split('.'))" >> equiforge/_version.py
           
       - name: Build release distributions
+        env:
+          SETUPTOOLS_SCM_PRETEND_VERSION: ${{ steps.set_version.outputs.version }}
         run: |
-          # Use the environment variable set in previous step
+          # Show the version file we created
+          cat equiforge/_version.py
+          
+          # Build with the forced version
           python -m build --sdist --wheel
 
       - name: Upload distributions
