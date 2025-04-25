@@ -259,7 +259,7 @@ def pers2equi_gpu(img, output_height,
 
 def pers2equi(img, output_height, 
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True, sampling_method="bilinear", log_level="INFO"):  # Changed default log_level to INFO
+              use_gpu=True, sampling_method="bilinear", log_level="INFO"):
     """
     Convert perspective image to equirectangular projection
     
@@ -272,7 +272,7 @@ def pers2equi(img, output_height,
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
     - use_gpu: Whether to use GPU acceleration if available
     - sampling_method: Sampling method for pixel interpolation ("nearest" or "bilinear")
-    - log_level: Optional override for log level during this conversion (default: "SILENT")
+    - log_level: Optional override for log level during this conversion
     
     Returns:
     - Equirectangular image as numpy array
@@ -287,97 +287,51 @@ def pers2equi(img, output_height,
         original_proj_level = projection_logger.level
         set_log_level(projection_logger, log_level)
     
-    try:
-        # Debug output for better diagnostics
-        logger.info(f"pers2equi called with output_height={output_height}, fov_x={fov_x}, use_gpu={use_gpu}")
+    # Debug output for better diagnostics
+    logger.info(f"pers2equi called with output_height={output_height}, fov_x={fov_x}, use_gpu={use_gpu}")
+    
+    # Handle file path input
+    if isinstance(img, str):
+        logger.info(f"Loading image from path: {img}")
+        img = np.array(Image.open(img))
+        logger.debug(f"Image loaded with shape: {img.shape}")
+    
+    # Check if img is None
+    if img is None:
+        raise ValueError("Input image cannot be None")
         
-        # Handle file path input
-        if isinstance(img, str):
-            try:
-                logger.info(f"Loading image from path: {img}")
-                img = np.array(Image.open(img))
-                logger.debug(f"Image loaded with shape: {img.shape}")
-            except Exception as e:
-                logger.error(f"Error loading image from path: {e}")
-                logger.info("Returning blank image instead of None")
-                return np.zeros((output_height, output_height*2, 3), dtype=np.uint8)
+    logger.info(f"Input image shape: {img.shape}, dtype: {img.dtype}")
+    
+    # Verify input image shape - only accept 3-channel color images
+    if len(img.shape) != 3 or img.shape[2] != 3:
+        raise ValueError(f"Input image must have exactly 3 color channels, got shape {img.shape}")
+    
+    # To ensure computational stability
+    fov_x = max(0.1, min(179.9, fov_x))
+    logger.info(f"Processing with parameters: FOV={fov_x}°, yaw={yaw}°, pitch={pitch}°, roll={roll}°")
         
-        # Check if img is None
-        if img is None:
-            logger.error("Input image is None")
-            logger.info("Returning blank image instead of None")
-            return np.zeros((output_height, output_height*2, 3), dtype=np.uint8)
-            
-        logger.info(f"Input image shape: {img.shape}, dtype: {img.dtype}")
+    # Determine processing method based on GPU availability and user preference
+    result = None
+    if use_gpu and HAS_CUDA:
+        logger.info("Using GPU processing")
+        result = pers2equi_gpu(img, output_height, fov_x, yaw, pitch, roll, sampling_method)
+    else:
+        if use_gpu and not HAS_CUDA:
+            logger.info("GPU requested but not available, using CPU")
+        else:
+            logger.info("CPU processing requested")
         
-        # Verify input image shape
-        if len(img.shape) != 3 or img.shape[2] != 3:
-            logger.warning(f"Expected 3-channel color image, got shape {img.shape}")
-            # Try to fix if grayscale
-            if len(img.shape) == 2:
-                logger.info("Converting grayscale to RGB")
-                img = np.stack((img,)*3, axis=-1)
-            elif len(img.shape) == 3 and img.shape[2] == 1:
-                logger.info("Converting single-channel to RGB")
-                img = np.concatenate([img, img, img], axis=2)
-            elif len(img.shape) == 3 and img.shape[2] == 4:
-                logger.info("Converting RGBA to RGB by dropping alpha channel")
-                img = img[:, :, :3]
-            else:
-                logger.error(f"Cannot convert image with shape {img.shape} to RGB")
-                logger.info("Returning blank image instead of None")
-                return np.zeros((output_height, output_height*2, 3), dtype=np.uint8)
+        # CPU processing
+        logger.info("Starting CPU processing")
+
+        result = pers2equi_cpu(img, output_height, fov_x, yaw, pitch, roll, sampling_method)
+    
+    logger.info("Processing completed successfully")
+    
+    # Restore original log levels
+    if original_level is not None:
+        logger.setLevel(original_level)
+    if original_proj_level is not None and projection_logger:
+        projection_logger.setLevel(original_proj_level)
         
-        # To ensure computational stability
-        fov_x = max(0.1, min(179.9, fov_x))
-        logger.info(f"Processing with parameters: FOV={fov_x}°, yaw={yaw}°, pitch={pitch}°, roll={roll}°")
-        
-        # For extremely small images (like in tests), use a simplified approach
-        if img.shape[0] <= 20 or img.shape[1] <= 20:
-            logger.warning(f"Image is very small: {img.shape}. Using fallback method.")
-            # For test purposes, return a valid equirectangular image (blank)
-            return np.zeros((output_height, output_height*2, 3), dtype=np.uint8)
-            
-        try:
-            # Always use CPU for tests to avoid GPU issues in CI environment
-            if use_gpu and HAS_CUDA:
-                logger.info("Attempting GPU processing")
-                try:
-                    result = pers2equi_gpu(img, output_height, 
-                                           fov_x, yaw, pitch, roll, sampling_method)
-                    logger.info("GPU processing completed successfully")
-                    return result
-                except Exception as e:
-                    logger.error(f"GPU processing failed: {e}. Falling back to CPU.")
-            else:
-                if use_gpu and not HAS_CUDA:
-                    logger.info("GPU requested but not available, using CPU")
-                else:
-                    logger.info("CPU processing requested")
-            
-            # Fallback to CPU processing
-            logger.info("Starting CPU processing")
-            # For very small test images, simplify the processing to avoid multiprocessing issues
-            if img.shape[0] < 50 or img.shape[1] < 50:
-                logger.warning("Input image is small, using simplified CPU processing")
-                # Return blank image for test purposes
-                result = np.zeros((output_height, output_height*2, 3), dtype=np.uint8)
-                logger.info("Simplified CPU processing completed successfully")
-                return result
-                
-            result = pers2equi_cpu(img, output_height, 
-                                   fov_x, yaw, pitch, roll, sampling_method)
-            logger.info("CPU processing completed successfully")
-            return result
-        except Exception as e:
-            logger.error(f"Error during processing: {str(e)}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            logger.info("Returning blank image instead of None")
-            return np.zeros((output_height, output_height*2, 3), dtype=np.uint8)
-    finally:
-        # Restore original log levels
-        if original_level is not None:
-            logger.setLevel(original_level)
-        if original_proj_level is not None and projection_logger:
-            projection_logger.setLevel(original_proj_level)
+    return result

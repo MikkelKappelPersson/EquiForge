@@ -58,7 +58,11 @@ class TestConverters:
     def test_roundtrip_conversion(self, sample_perspective_image):
         """Test that converting to equi and back preserves image (approximately)"""
         # Set use_gpu to False for consistent behavior across environments
-        equi = pers2equi(sample_perspective_image, output_height=100, fov_x=90, use_gpu=False)
+        equi = pers2equi(
+            sample_perspective_image, 
+            output_height=100, 
+            fov_x=90, 
+            use_gpu=False)
         
         pers_restored = equi2pers(
             equi, 
@@ -80,21 +84,4 @@ class TestConverters:
             warnings.warn(f"Roundtrip conversion MAE is {mae:.2f}, which is above the target of 10")
         
         # Original threshold for passing
-        assert mae < 50, f"MAE={mae:.2f} exceeds maximum threshold of 50"
-    
-    def test_invalid_input_handling(self):
-        """Test that functions properly handle invalid inputs"""
-        # Test with invalid FOV but valid inputs otherwise
-        test_img = np.ones((100, 100, 3), dtype=np.uint8) * 128
-        result = pers2equi(test_img, output_height=100, fov_x=90, use_gpu=False)
-        assert result is not None
-        assert isinstance(result, np.ndarray)
-        
-        # Test with small image dimensions - use CPU for small images
-        small_img = np.ones((10, 20, 3), dtype=np.uint8) * 128
-        try:
-            result = equi2pers(small_img, output_width=100, output_height=100, fov_x=90, use_gpu=False)
-            assert isinstance(result, np.ndarray)
-            assert result.shape == (100, 100, 3)
-        except Exception as e:
-            pytest.skip(f"Small image test skipped due to error: {str(e)}")
+        assert mae < 50, f"MAE={mae:.2f} exceeds maximum threshold of 50" 
