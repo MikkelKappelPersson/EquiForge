@@ -26,8 +26,11 @@ def nearest_neighbor_sampling(img, y, x):
     - RGB pixel value
     """
     h, w = img.shape[:2]
-    x_int = int(round(np.clip(x, 0, w - 1)))
-    y_int = int(round(np.clip(y, 0, h - 1)))
+    
+    # Convert to float, clip, then round to nearest integer
+    x_int = int(round(min(max(0.0, float(x)), w - 1)))
+    y_int = int(round(min(max(0.0, float(y)), h - 1)))
+    
     return img[y_int, x_int]
 
 @jit(nopython=True)
@@ -45,9 +48,9 @@ def bilinear_sampling(img, y, x):
     """
     h, w = img.shape[:2]
     
-    # Ensure coordinates are within bounds
-    x = np.clip(x, 0, w - 1.001)  # Small epsilon to avoid edge overflow
-    y = np.clip(y, 0, h - 1.001)
+    # Convert to float and clip in one step
+    x = min(max(0.0, float(x)), w - 1.001)  # Small epsilon to avoid edge overflow
+    y = min(max(0.0, float(y)), h - 1.001)
     
     # Get integer and fractional parts
     x0 = int(np.floor(x))
@@ -62,9 +65,9 @@ def bilinear_sampling(img, y, x):
     # Perform bilinear interpolation for each channel
     result = np.zeros(3, dtype=np.uint8)
     for c in range(3):
-        top = img[y0, x0, c] * (1 - wx) + img[y0, x1, c] * wx
-        bottom = img[y1, x0, c] * (1 - wx) + img[y1, x1, c] * wx
-        result[c] = np.uint8(top * (1 - wy) + bottom * wy)
+        top = img[y0, x0, c] * (1.0 - wx) + img[y0, x1, c] * wx
+        bottom = img[y1, x0, c] * (1.0 - wx) + img[y1, x1, c] * wx
+        result[c] = np.uint8(top * (1.0 - wy) + bottom * wy)
     
     return result
 

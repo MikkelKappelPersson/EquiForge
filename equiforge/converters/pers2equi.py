@@ -85,7 +85,7 @@ if HAS_CUDA:
 
 @jit(nopython=True, parallel=True)
 def pers2equi_cpu_kernel(img, equirect, output_width, output_height, 
-                      x_start, x_end, params, sampling_method="nearest"):
+                      x_start, x_end, params, sampling_method="bilinear"):
     """Process a range of columns with Numba optimization on CPU"""
     for x in prange(x_start, x_end):
         for y in range(output_height):
@@ -144,7 +144,7 @@ def process_chunk(args):
     return chunk, x_start, x_end
 
 def pers2equi_cpu(img, output_height, 
-                  fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, sampling_method="nearest"):
+                  fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, sampling_method="bilinear"):
     """Multi-threaded conversion from perspective to equirectangular projection"""
     # Standard equirectangular aspect ratio is 2:1
     output_width = output_height * 2
@@ -208,7 +208,7 @@ def pers2equi_cpu(img, output_height,
 
 @timer
 def pers2equi_gpu(img, output_height, 
-                 fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, sampling_method="nearest"):
+                 fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, sampling_method="bilinear"):
     """GPU-accelerated conversion from perspective to equirectangular projection"""
     # Standard equirectangular aspect ratio is 2:1
     output_width = output_height * 2
@@ -259,7 +259,7 @@ def pers2equi_gpu(img, output_height,
 
 def pers2equi(img, output_height, 
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True, sampling_method="nearest", log_level="SILENT"):
+              use_gpu=True, sampling_method="bilinear", log_level="INFO"):
     """
     Convert perspective image to equirectangular projection
     
@@ -272,7 +272,7 @@ def pers2equi(img, output_height,
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
     - use_gpu: Whether to use GPU acceleration if available
     - sampling_method: Sampling method for pixel interpolation ("nearest" or "bilinear")
-    - log_level: Optional override for log level during this conversion (default: "SILENT")
+    - log_level: Optional override for log level during this conversion
     
     Returns:
     - Equirectangular image as numpy array
@@ -287,57 +287,51 @@ def pers2equi(img, output_height,
         original_proj_level = projection_logger.level
         set_log_level(projection_logger, log_level)
     
-    try:
-        # Handle file path input
-        if isinstance(img, str):
-            try:
-                logger.info(f"Loading image from path: {img}")
-                img = np.array(Image.open(img))
-                logger.debug(f"Image loaded with shape: {img.shape}")
-            except Exception as e:
-                logger.error(f"Error loading image from path: {e}")
-                return None
+    # Debug output for better diagnostics
+    logger.info(f"pers2equi called with output_height={output_height}, fov_x={fov_x}, use_gpu={use_gpu}")
+    
+    # Handle file path input
+    if isinstance(img, str):
+        logger.info(f"Loading image from path: {img}")
+        img = np.array(Image.open(img))
+        logger.debug(f"Image loaded with shape: {img.shape}")
+    
+    # Check if img is None
+    if img is None:
+        raise ValueError("Input image cannot be None")
         
-        # Verify input image shape
-        if len(img.shape) != 3 or img.shape[2] != 3:
-            logger.warning(f"Expected 3-channel color image, got shape {img.shape}")
-            # Try to fix if grayscale
-            if len(img.shape) == 2:
-                logger.info("Converting grayscale to RGB")
-                img = np.stack((img,)*3, axis=-1)
+    logger.info(f"Input image shape: {img.shape}, dtype: {img.dtype}")
+    
+    # Verify input image shape - only accept 3-channel color images
+    if len(img.shape) != 3 or img.shape[2] != 3:
+        raise ValueError(f"Input image must have exactly 3 color channels, got shape {img.shape}")
+    
+    # To ensure computational stability
+    fov_x = max(0.1, min(179.9, fov_x))
+    logger.info(f"Processing with parameters: FOV={fov_x}°, yaw={yaw}°, pitch={pitch}°, roll={roll}°")
         
-        # To ensure computational stability
-        fov_x = max(0.1, min(179.9, fov_x))
-        logger.info(f"Processing with parameters: FOV={fov_x}°, yaw={yaw}°, pitch={pitch}°, roll={roll}°")
+    # Determine processing method based on GPU availability and user preference
+    result = None
+    if use_gpu and HAS_CUDA:
+        logger.info("Using GPU processing")
+        result = pers2equi_gpu(img, output_height, fov_x, yaw, pitch, roll, sampling_method)
+    else:
+        if use_gpu and not HAS_CUDA:
+            logger.info("GPU requested but not available, using CPU")
+        else:
+            logger.info("CPU processing requested")
         
-        try:
-            if use_gpu and HAS_CUDA:
-                logger.info("Attempting GPU processing")
-                try:
-                    result = pers2equi_gpu(img, output_height, 
-                                           fov_x, yaw, pitch, roll, sampling_method)
-                    logger.info("GPU processing completed successfully")
-                    return result
-                except Exception as e:
-                    logger.error(f"GPU processing failed: {e}. Falling back to CPU.")
-            else:
-                if use_gpu and not HAS_CUDA:
-                    logger.info("GPU requested but not available, using CPU")
-                else:
-                    logger.info("CPU processing requested")
-            
-            # Fallback to CPU processing
-            logger.info("Starting CPU processing")
-            result = pers2equi_cpu(img, output_height, 
-                                   fov_x, yaw, pitch, roll, sampling_method)
-            logger.info("CPU processing completed successfully")
-            return result
-        except Exception as e:
-            logger.error(f"Error during processing: {e}")
-            return None
-    finally:
-        # Restore original log levels
-        if original_level is not None:
-            logger.setLevel(original_level)
-        if original_proj_level is not None and projection_logger:
-            projection_logger.setLevel(original_proj_level)
+        # CPU processing
+        logger.info("Starting CPU processing")
+
+        result = pers2equi_cpu(img, output_height, fov_x, yaw, pitch, roll, sampling_method)
+    
+    logger.info("Processing completed successfully")
+    
+    # Restore original log levels
+    if original_level is not None:
+        logger.setLevel(original_level)
+    if original_proj_level is not None and projection_logger:
+        projection_logger.setLevel(original_proj_level)
+        
+    return result

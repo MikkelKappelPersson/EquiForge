@@ -55,3 +55,4 @@ equiforge/_version.py
 
 # Ignore Notebook_Dev.ipynb for the main branch
 [branch=main]Notebook_Dev.ipynb
+[branch=main].github/copilot-instructions.md
