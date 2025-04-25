@@ -3,7 +3,7 @@
 </p>
 
 <h4 align="center">
-    A performant toolkit for equirectangular image processing and conversions
+    A performant and precise toolkit for equirectangular image processing and conversions
 </h4>
 
 
@@ -21,6 +21,7 @@
 - Convert perspective images to equirectangular projection (`pers2equi`)
 - Convert equirectangular images to perspective view (`equi2pers`)
 - GPU acceleration with CUDA (optional)
+- Uses 32-bit floating point precision for all image processing operations for improved precision
 
 ## Installation
 

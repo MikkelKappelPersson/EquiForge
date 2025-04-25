@@ -31,7 +31,8 @@ def nearest_neighbor_sampling(img, y, x):
     x_int = int(round(min(max(0.0, float(x)), w - 1)))
     y_int = int(round(min(max(0.0, float(y)), h - 1)))
     
-    return img[y_int, x_int]
+    # Return as float32
+    return img[y_int, x_int].astype(np.float32)
 
 @jit(nopython=True)
 def bilinear_sampling(img, y, x):
@@ -63,11 +64,11 @@ def bilinear_sampling(img, y, x):
     wy = y - y0
     
     # Perform bilinear interpolation for each channel
-    result = np.zeros(3, dtype=np.uint8)
+    result = np.zeros(3, dtype=np.float32)
     for c in range(3):
         top = img[y0, x0, c] * (1.0 - wx) + img[y0, x1, c] * wx
         bottom = img[y1, x0, c] * (1.0 - wx) + img[y1, x1, c] * wx
-        result[c] = np.uint8(top * (1.0 - wy) + bottom * wy)
+        result[c] = top * (1.0 - wy) + bottom * wy
     
     return result
 
@@ -139,22 +140,22 @@ if HAS_CUDA:
         wx = x - x0
         wy = y - y0
         
-        # Results for each channel
-        r = 0
-        g = 0
-        b = 0
+        # Results for each channel as float32
+        r = 0.0
+        g = 0.0
+        b = 0.0
         
         # Calculate interpolation for each channel
         top_r = img[y0, x0, 0] * (1 - wx) + img[y0, x1, 0] * wx
         bottom_r = img[y1, x0, 0] * (1 - wx) + img[y1, x1, 0] * wx
-        r = int(top_r * (1 - wy) + bottom_r * wy)
+        r = top_r * (1 - wy) + bottom_r * wy
         
         top_g = img[y0, x0, 1] * (1 - wx) + img[y0, x1, 1] * wx
         bottom_g = img[y1, x0, 1] * (1 - wx) + img[y1, x1, 1] * wx
-        g = int(top_g * (1 - wy) + bottom_g * wy)
+        g = top_g * (1 - wy) + bottom_g * wy
         
         top_b = img[y0, x0, 2] * (1 - wx) + img[y0, x1, 2] * wx
         bottom_b = img[y1, x0, 2] * (1 - wx) + img[y1, x1, 2] * wx
-        b = int(top_b * (1 - wy) + bottom_b * wy)
+        b = top_b * (1 - wy) + bottom_b * wy
         
         return r, g, b

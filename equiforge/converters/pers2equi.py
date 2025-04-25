@@ -87,6 +87,10 @@ if HAS_CUDA:
 def pers2equi_cpu_kernel(img, equirect, output_width, output_height, 
                       x_start, x_end, params, sampling_method="bilinear"):
     """Process a range of columns with Numba optimization on CPU"""
+    # Convert to float32 for processing
+    img = img.astype(np.float32)
+    equirect = equirect.astype(np.float32)
+    
     for x in prange(x_start, x_end):
         for y in range(output_height):
             phi = np.pi * y / output_height - np.pi / 2
@@ -106,14 +110,15 @@ def pers2equi_cpu_kernel(img, equirect, output_width, output_height,
             # Only project points in front of the camera
             if vec_rotated_z > 0:
                 cx, cy, f_h, f_v, w, h = params[:-1]
-                px = int(f_h * vec_rotated_x / vec_rotated_z + cx)
-                py = int(f_v * vec_rotated_y / vec_rotated_z + cy)
+                px = f_h * vec_rotated_x / vec_rotated_z + cx
+                py = f_v * vec_rotated_y / vec_rotated_z + cy
                 
                 if 0 <= px < w and 0 <= py < h:
                     # Use sampling function
                     equirect[y, x] = sample_image(img, py, px, sampling_method)
     
-    return equirect
+    # Convert back to uint8 for output
+    return np.clip(equirect, 0, 255).astype(np.uint8)
 
 def process_chunk(args):
     """Process a horizontal chunk of the equirectangular image"""
@@ -135,7 +140,7 @@ def process_chunk(args):
     R = create_rotation_matrix(yaw_rad, pitch_rad, roll_rad)
     
     # Create a chunk of the output image
-    chunk = np.zeros((output_height, x_end - x_start, 3), dtype=np.uint8)
+    chunk = np.zeros((output_height, x_end - x_start, 3), dtype=np.float32)
     
     # Use CPU kernel for processing the chunk
     chunk = pers2equi_cpu_kernel(img, chunk, output_width, output_height, 
@@ -226,14 +231,14 @@ def pers2equi_gpu(img, output_height,
     # Get rotation matrix
     R = create_rotation_matrix(yaw_rad, pitch_rad, roll_rad)
     
-    # Create output equirectangular image
-    equirect = np.zeros((output_height, output_width, 3), dtype=np.uint8)
+    # Create output equirectangular image using float32 for processing
+    equirect = np.zeros((output_height, output_width, 3), dtype=np.float32)
     
-    # Copy data to GPU
+    # Copy data to GPU - convert inputs to float32 for processing
     logger.debug("Copying data to GPU...")
-    d_img = cuda.to_device(img)
+    d_img = cuda.to_device(img.astype(np.float32))
     d_equirect = cuda.to_device(equirect)
-    d_r_matrix = cuda.to_device(R)
+    d_r_matrix = cuda.to_device(R)  # Missing line to copy the rotation matrix to GPU
     
     # Configure grid and block dimensions
     threads_per_block = (16, 16)
@@ -255,7 +260,8 @@ def pers2equi_gpu(img, output_height,
     logger.debug("Copying result back to CPU...")
     equirect = d_equirect.copy_to_host()
     
-    return equirect
+    # Convert back to uint8 for output
+    return np.clip(equirect, 0, 255).astype(np.uint8)
 
 def pers2equi(img, output_height, 
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,

@@ -64,9 +64,9 @@ def calculate_focal_length(width, height, fov_x_rad):
     aspect_ratio = width / height
     fov_y_rad = fov_x_rad / aspect_ratio
     
-    # Calculate focal lengths
-    f_h = (width / 2) / np.tan(fov_x_rad / 2)
-    f_v = (height / 2) / np.tan(fov_y_rad / 2)
+    # Calculate focal lengths (ensure float32 type)
+    f_h = np.float32((width / 2) / np.tan(fov_x_rad / 2))
+    f_v = np.float32((height / 2) / np.tan(fov_y_rad / 2))
     
     return f_h, f_v
 
