@@ -10,10 +10,8 @@ from equiforge.utils.logging_utils import set_package_log_level, reset_loggers, 
 import logging
 
 from importlib.metadata import version
-try:
-    __version__ = version("equiforge")
-except:
-    __version__ = "0.1.0"  # fallback version
+
+__version__ = version("equiforge")
 
 __all__ = ['pers2equi', 'equi2pers', 'set_package_log_level', 'reset_loggers']
 
