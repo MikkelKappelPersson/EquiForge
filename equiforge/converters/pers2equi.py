@@ -2,6 +2,7 @@
 Perspective to Equirectangular Converter
 
 This module converts perspective images to equirectangular projection with optimized performance.
+All processing is done using float32 precision for optimal balance of accuracy and performance.
 """
 
 import numpy as np
@@ -281,7 +282,12 @@ def pers2equi(img, output_height,
     - log_level: Optional override for log level during this conversion
     
     Returns:
-    - Equirectangular image as numpy array
+    - Equirectangular image as numpy array (uint8)
+    
+    Notes:
+    - All internal processing is performed using float32 precision
+    - Input images are converted to float32 for processing regardless of input type
+    - Output is converted back to uint8 after processing
     """
     # Set temporary log level for this module's logger
     original_level = set_log_level(logger, log_level)

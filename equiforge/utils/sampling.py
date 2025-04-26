@@ -1,7 +1,8 @@
 """
-Sampling methods for image conversion operations
+Image Sampling Utilities
 
-This module provides different sampling methods for use in equirectangular and perspective image conversions.
+This module provides various sampling methods for image interpolation.
+All sampling operations use float32 precision for calculations.
 """
 
 import numpy as np
@@ -73,18 +74,17 @@ def bilinear_sampling(img, y, x):
     return result
 
 @jit(nopython=True)
-def sample_image(img, y, x, method):
+def sample_image(img, y, x, method="bilinear"):
     """
-    Sample a pixel from an image using the specified filtering method.
+    Sample image at floating point coordinates using specified sampling method
     
     Parameters:
-        img (numpy.ndarray): Source image array
-        y (float): Y coordinate in the source image
-        x (float): X coordinate in the source image
-        method (str): Filtering method ('nearest', 'bilinear')
-        
+    - img: Input image (will be converted to float32 internally)
+    - y, x: Floating point coordinates to sample at
+    - method: Sampling method ('nearest' or 'bilinear')
+    
     Returns:
-        numpy.ndarray: RGB values of the sampled pixel
+    - Sampled pixel value as float32 array
     """
     if method == "bilinear":
         return bilinear_sampling(img, y, x)
