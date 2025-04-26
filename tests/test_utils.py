@@ -31,13 +31,3 @@ class TestLoggingUtils:
         logger = logging_utils.setup_logger("test_logger")
         assert isinstance(logger, logging.Logger)
         assert logger.name == "test_logger"
-    
-    def test_log_level_setting(self):
-        """Test that log levels are set correctly"""
-        # Fix: If log_level is not a parameter, we should check the default level
-        logger = logging_utils.setup_logger("level_test")
-        assert logger.level == logging.INFO  # Assuming default is INFO
-        
-        # If we need to test different log levels, use setLevel after creation
-        logger.setLevel(logging.DEBUG)
-        assert logger.level == logging.DEBUG

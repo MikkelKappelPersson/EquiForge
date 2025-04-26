@@ -6,7 +6,7 @@ particularly focusing on equirectangular projections.
 """
 from equiforge.converters.pers2equi import pers2equi
 from equiforge.converters.equi2pers import equi2pers
-from equiforge.utils.logging_utils import set_package_log_level, reset_loggers
+from equiforge.utils.logging_utils import set_package_log_level, reset_loggers, SILENT
 import logging
 
 from importlib.metadata import version
@@ -24,15 +24,9 @@ for handler in root_logger.handlers[:]:
 root_logger.addHandler(logging.NullHandler())
 root_logger.propagate = False
 
-# Set default log level based on version
-# If it's a development version (contains '+' or '.dev'), use INFO level
-# For released versions on main branch, use WARNING level
-if '+' in __version__ or '.dev' in __version__:
-    # Development version
-    default_log_level = logging.INFO
-else:
-    # Release version
-    default_log_level = logging.WARNING
+# Set default log level to WARNING
+# Shows warnings and errors, but hides routine info messages
+default_log_level = logging.WARNING
 
-# Use silent level during initial import to avoid logs unless users specifically enable them
+# Initialize package logging with the default level
 set_package_log_level(default_log_level, show_initial_message=False)

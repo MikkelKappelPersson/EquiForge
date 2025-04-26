@@ -14,7 +14,7 @@ import logging
 from multiprocessing import Pool, cpu_count
 from numba import jit, prange, cuda
 from ..utils.projection_utils import create_rotation_matrix, calculate_focal_length, check_cuda_support, timer
-from ..utils.logging_utils import setup_logger, set_log_level
+from ..utils.logging_utils import setup_logger
 from ..utils.sampling import sample_image
 
 # Set up logger
@@ -97,7 +97,10 @@ def equi2pers_cpu_kernel(equi, perspective, output_width, output_height,
     perspective = perspective.astype(np.float32)
     equi = equi.astype(np.float32)
     
-    for x in prange(x_start, x_end):
+    chunk_width = x_end - x_start
+    for chunk_x in prange(chunk_width):
+        x = x_start + chunk_x  # Convert local chunk coordinate to global image coordinate
+        
         for y in range(output_height):
             # Calculate normalized device coordinates with standard y-axis orientation
             ndc_x = (x - cx) / f_h
@@ -127,8 +130,8 @@ def equi2pers_cpu_kernel(equi, perspective, output_width, output_height,
             equi_x = int((theta + np.pi) / (2 * np.pi) * equi_w) % equi_w
             equi_y = int((np.pi/2 - phi) / np.pi * equi_h) % equi_h  # Standard mapping for equirectangular
             
-            # Use sampling function for pixel assignment
-            perspective[y, x] = sample_image(equi, equi_y, equi_x, sampling_method)
+            # Use sampling function for pixel assignment - write to local chunk coordinate
+            perspective[y, chunk_x] = sample_image(equi, equi_y, equi_x, sampling_method)
     
     # Convert back to uint8 for output
     return np.clip(perspective, 0, 255).astype(np.uint8)
@@ -154,11 +157,12 @@ def process_chunk(args):
     R_inv = np.linalg.inv(R)
     
     # Create a chunk of the output image
-    chunk = np.zeros((output_height, x_end - x_start, 3), dtype=np.float32)
+    chunk_width = x_end - x_start
+    chunk = np.zeros((output_height, chunk_width, 3), dtype=np.float32)
     
-    # Use CPU kernel for processing the chunk
+    # Use CPU kernel for processing the chunk - fixed to use proper coordinates
     chunk = equi2pers_cpu_kernel(equi, chunk, output_width, output_height, 
-                              0, x_end - x_start, cx, cy, f_h, f_v, equi_w, equi_h, R_inv, sampling_method)
+                              x_start, x_end, cx, cy, f_h, f_v, equi_w, equi_h, R_inv, sampling_method)
     
     return chunk, x_start, x_end
 
@@ -269,7 +273,7 @@ def equi2pers_gpu(equi, output_width, output_height,
 
 def equi2pers(img, output_width, output_height,
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True, sampling_method="bilinear", log_level="INFO"):
+              use_gpu=True, sampling_method="bilinear"):
     """
     Convert equirectangular image to perspective projection
     
@@ -283,7 +287,6 @@ def equi2pers(img, output_width, output_height,
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
     - use_gpu: Whether to use GPU acceleration if available
     - sampling_method: Sampling method for pixel interpolation (default: "bilinear")
-    - log_level: Optional override for log level during this conversion (default: "INFO")
     
     Returns:
     - Perspective image as numpy array (uint8)
@@ -292,17 +295,8 @@ def equi2pers(img, output_width, output_height,
     - All internal processing is performed using float32 precision
     - Input images are converted to float32 for processing regardless of input type
     - Output is converted back to uint8 after processing
+    - To change logging verbosity, use set_global_log_level() from utils.logging_utils
     """
-    # Set temporary log level for this module's logger
-    original_level = set_log_level(logger, log_level)
-    
-    # Also set the same log level for the projection_utils logger that's used by the timer decorator
-    projection_logger = logging.getLogger('equiforge.utils.projection_utils')
-    original_proj_level = None
-    if projection_logger:
-        original_proj_level = projection_logger.level
-        set_log_level(projection_logger, log_level)
-    
     # Debug output for better diagnostics
     logger.info(f"equi2pers called with output_width={output_width}, output_height={output_height}, fov_x={fov_x}, use_gpu={use_gpu}")
     
@@ -343,10 +337,4 @@ def equi2pers(img, output_width, output_height,
     
     logger.info("Processing completed successfully")
     
-    # Restore original log levels
-    if original_level is not None:
-        logger.setLevel(original_level)
-    if original_proj_level is not None and projection_logger:
-        projection_logger.setLevel(original_proj_level)
-        
     return result

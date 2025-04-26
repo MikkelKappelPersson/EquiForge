@@ -14,7 +14,7 @@ import logging
 from multiprocessing import Pool, cpu_count
 from numba import jit, prange, cuda
 from ..utils.projection_utils import create_rotation_matrix, calculate_focal_length, check_cuda_support, timer
-from ..utils.logging_utils import setup_logger, set_log_level
+from ..utils.logging_utils import setup_logger
 from ..utils.sampling import sample_image
 
 # For GPU processing, import GPU sampling methods
@@ -197,18 +197,18 @@ def pers2equi_cpu(img, output_height,
         for result in results:
             chunk_data, x_start, x_end = result.get()
             
-            # Debug output
+            # Debug output - changed to debug level since empty chunks are expected
             if np.sum(chunk_data) == 0:
-                logger.warning(f"Chunk {x_start}-{x_end} is all zeros")
+                logger.debug(f"Chunk {x_start}-{x_end} contains no image data")
             
             # Copy chunk data to output image
             equirect[:, x_start:x_end] = chunk_data
     
-    # Debug output
+    # Debug output - only warn if the entire output is empty which would be unusual
     if np.sum(equirect) == 0:
-        logger.warning("Output image is all zeros!")
+        logger.warning("Output image is all zeros - this may indicate a problem with input parameters")
     else:
-        logger.info("Conversion complete with non-zero data!")
+        logger.info("Conversion completed successfully")
         
     return equirect
 
@@ -266,7 +266,7 @@ def pers2equi_gpu(img, output_height,
 
 def pers2equi(img, output_height, 
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True, sampling_method="bilinear", log_level="INFO"):
+              use_gpu=True, sampling_method="bilinear"):
     """
     Convert perspective image to equirectangular projection
     
@@ -279,7 +279,6 @@ def pers2equi(img, output_height,
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
     - use_gpu: Whether to use GPU acceleration if available
     - sampling_method: Sampling method for pixel interpolation ("nearest" or "bilinear")
-    - log_level: Optional override for log level during this conversion
     
     Returns:
     - Equirectangular image as numpy array (uint8)
@@ -288,17 +287,8 @@ def pers2equi(img, output_height,
     - All internal processing is performed using float32 precision
     - Input images are converted to float32 for processing regardless of input type
     - Output is converted back to uint8 after processing
+    - To change logging verbosity, use set_global_log_level() from utils.logging_utils
     """
-    # Set temporary log level for this module's logger
-    original_level = set_log_level(logger, log_level)
-    
-    # Also set the same log level for the projection_utils logger that's used by the timer decorator
-    projection_logger = logging.getLogger('equiforge.utils.projection_utils')
-    original_proj_level = None
-    if projection_logger:
-        original_proj_level = projection_logger.level
-        set_log_level(projection_logger, log_level)
-    
     # Debug output for better diagnostics
     logger.info(f"pers2equi called with output_height={output_height}, fov_x={fov_x}, use_gpu={use_gpu}")
     
@@ -340,10 +330,4 @@ def pers2equi(img, output_height,
     
     logger.info("Processing completed successfully")
     
-    # Restore original log levels
-    if original_level is not None:
-        logger.setLevel(original_level)
-    if original_proj_level is not None and projection_logger:
-        projection_logger.setLevel(original_proj_level)
-        
     return result
