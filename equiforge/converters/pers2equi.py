@@ -2,6 +2,7 @@
 Perspective to Equirectangular Converter
 
 This module converts perspective images to equirectangular projection with optimized performance.
+All processing is done using float32 precision for optimal balance of accuracy and performance.
 """
 
 import numpy as np
@@ -13,7 +14,7 @@ import logging
 from multiprocessing import Pool, cpu_count
 from numba import jit, prange, cuda
 from ..utils.projection_utils import create_rotation_matrix, calculate_focal_length, check_cuda_support, timer
-from ..utils.logging_utils import setup_logger, set_log_level
+from ..utils.logging_utils import setup_logger
 from ..utils.sampling import sample_image
 
 # For GPU processing, import GPU sampling methods
@@ -87,6 +88,10 @@ if HAS_CUDA:
 def pers2equi_cpu_kernel(img, equirect, output_width, output_height, 
                       x_start, x_end, params, sampling_method="bilinear"):
     """Process a range of columns with Numba optimization on CPU"""
+    # Convert to float32 for processing
+    img = img.astype(np.float32)
+    equirect = equirect.astype(np.float32)
+    
     for x in prange(x_start, x_end):
         for y in range(output_height):
             phi = np.pi * y / output_height - np.pi / 2
@@ -106,14 +111,15 @@ def pers2equi_cpu_kernel(img, equirect, output_width, output_height,
             # Only project points in front of the camera
             if vec_rotated_z > 0:
                 cx, cy, f_h, f_v, w, h = params[:-1]
-                px = int(f_h * vec_rotated_x / vec_rotated_z + cx)
-                py = int(f_v * vec_rotated_y / vec_rotated_z + cy)
+                px = f_h * vec_rotated_x / vec_rotated_z + cx
+                py = f_v * vec_rotated_y / vec_rotated_z + cy
                 
                 if 0 <= px < w and 0 <= py < h:
                     # Use sampling function
                     equirect[y, x] = sample_image(img, py, px, sampling_method)
     
-    return equirect
+    # Convert back to uint8 for output
+    return np.clip(equirect, 0, 255).astype(np.uint8)
 
 def process_chunk(args):
     """Process a horizontal chunk of the equirectangular image"""
@@ -135,7 +141,7 @@ def process_chunk(args):
     R = create_rotation_matrix(yaw_rad, pitch_rad, roll_rad)
     
     # Create a chunk of the output image
-    chunk = np.zeros((output_height, x_end - x_start, 3), dtype=np.uint8)
+    chunk = np.zeros((output_height, x_end - x_start, 3), dtype=np.float32)
     
     # Use CPU kernel for processing the chunk
     chunk = pers2equi_cpu_kernel(img, chunk, output_width, output_height, 
@@ -191,18 +197,18 @@ def pers2equi_cpu(img, output_height,
         for result in results:
             chunk_data, x_start, x_end = result.get()
             
-            # Debug output
+            # Debug output - changed to debug level since empty chunks are expected
             if np.sum(chunk_data) == 0:
-                logger.warning(f"Chunk {x_start}-{x_end} is all zeros")
+                logger.debug(f"Chunk {x_start}-{x_end} contains no image data")
             
             # Copy chunk data to output image
             equirect[:, x_start:x_end] = chunk_data
     
-    # Debug output
+    # Debug output - only warn if the entire output is empty which would be unusual
     if np.sum(equirect) == 0:
-        logger.warning("Output image is all zeros!")
+        logger.warning("Output image is all zeros - this may indicate a problem with input parameters")
     else:
-        logger.info("Conversion complete with non-zero data!")
+        logger.info("Conversion completed successfully")
         
     return equirect
 
@@ -226,14 +232,14 @@ def pers2equi_gpu(img, output_height,
     # Get rotation matrix
     R = create_rotation_matrix(yaw_rad, pitch_rad, roll_rad)
     
-    # Create output equirectangular image
-    equirect = np.zeros((output_height, output_width, 3), dtype=np.uint8)
+    # Create output equirectangular image using float32 for processing
+    equirect = np.zeros((output_height, output_width, 3), dtype=np.float32)
     
-    # Copy data to GPU
+    # Copy data to GPU - convert inputs to float32 for processing
     logger.debug("Copying data to GPU...")
-    d_img = cuda.to_device(img)
+    d_img = cuda.to_device(img.astype(np.float32))
     d_equirect = cuda.to_device(equirect)
-    d_r_matrix = cuda.to_device(R)
+    d_r_matrix = cuda.to_device(R)  # Missing line to copy the rotation matrix to GPU
     
     # Configure grid and block dimensions
     threads_per_block = (16, 16)
@@ -255,11 +261,12 @@ def pers2equi_gpu(img, output_height,
     logger.debug("Copying result back to CPU...")
     equirect = d_equirect.copy_to_host()
     
-    return equirect
+    # Convert back to uint8 for output
+    return np.clip(equirect, 0, 255).astype(np.uint8)
 
 def pers2equi(img, output_height, 
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True, sampling_method="bilinear", log_level="INFO"):
+              use_gpu=True, sampling_method="bilinear"):
     """
     Convert perspective image to equirectangular projection
     
@@ -272,21 +279,16 @@ def pers2equi(img, output_height,
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
     - use_gpu: Whether to use GPU acceleration if available
     - sampling_method: Sampling method for pixel interpolation ("nearest" or "bilinear")
-    - log_level: Optional override for log level during this conversion
     
     Returns:
-    - Equirectangular image as numpy array
+    - Equirectangular image as numpy array (uint8)
+    
+    Notes:
+    - All internal processing is performed using float32 precision
+    - Input images are converted to float32 for processing regardless of input type
+    - Output is converted back to uint8 after processing
+    - To change logging verbosity, use set_global_log_level() from utils.logging_utils
     """
-    # Set temporary log level for this module's logger
-    original_level = set_log_level(logger, log_level)
-    
-    # Also set the same log level for the projection_utils logger that's used by the timer decorator
-    projection_logger = logging.getLogger('equiforge.utils.projection_utils')
-    original_proj_level = None
-    if projection_logger:
-        original_proj_level = projection_logger.level
-        set_log_level(projection_logger, log_level)
-    
     # Debug output for better diagnostics
     logger.info(f"pers2equi called with output_height={output_height}, fov_x={fov_x}, use_gpu={use_gpu}")
     
@@ -328,10 +330,4 @@ def pers2equi(img, output_height,
     
     logger.info("Processing completed successfully")
     
-    # Restore original log levels
-    if original_level is not None:
-        logger.setLevel(original_level)
-    if original_proj_level is not None and projection_logger:
-        projection_logger.setLevel(original_proj_level)
-        
     return result

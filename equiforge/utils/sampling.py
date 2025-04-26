@@ -1,7 +1,8 @@
 """
-Sampling methods for image conversion operations
+Image Sampling Utilities
 
-This module provides different sampling methods for use in equirectangular and perspective image conversions.
+This module provides various sampling methods for image interpolation.
+All sampling operations use float32 precision for calculations.
 """
 
 import numpy as np
@@ -31,7 +32,8 @@ def nearest_neighbor_sampling(img, y, x):
     x_int = int(round(min(max(0.0, float(x)), w - 1)))
     y_int = int(round(min(max(0.0, float(y)), h - 1)))
     
-    return img[y_int, x_int]
+    # Return as float32
+    return img[y_int, x_int].astype(np.float32)
 
 @jit(nopython=True)
 def bilinear_sampling(img, y, x):
@@ -63,27 +65,26 @@ def bilinear_sampling(img, y, x):
     wy = y - y0
     
     # Perform bilinear interpolation for each channel
-    result = np.zeros(3, dtype=np.uint8)
+    result = np.zeros(3, dtype=np.float32)
     for c in range(3):
         top = img[y0, x0, c] * (1.0 - wx) + img[y0, x1, c] * wx
         bottom = img[y1, x0, c] * (1.0 - wx) + img[y1, x1, c] * wx
-        result[c] = np.uint8(top * (1.0 - wy) + bottom * wy)
+        result[c] = top * (1.0 - wy) + bottom * wy
     
     return result
 
 @jit(nopython=True)
-def sample_image(img, y, x, method):
+def sample_image(img, y, x, method="bilinear"):
     """
-    Sample a pixel from an image using the specified filtering method.
+    Sample image at floating point coordinates using specified sampling method
     
     Parameters:
-        img (numpy.ndarray): Source image array
-        y (float): Y coordinate in the source image
-        x (float): X coordinate in the source image
-        method (str): Filtering method ('nearest', 'bilinear')
-        
+    - img: Input image (will be converted to float32 internally)
+    - y, x: Floating point coordinates to sample at
+    - method: Sampling method ('nearest' or 'bilinear')
+    
     Returns:
-        numpy.ndarray: RGB values of the sampled pixel
+    - Sampled pixel value as float32 array
     """
     if method == "bilinear":
         return bilinear_sampling(img, y, x)
@@ -139,22 +140,22 @@ if HAS_CUDA:
         wx = x - x0
         wy = y - y0
         
-        # Results for each channel
-        r = 0
-        g = 0
-        b = 0
+        # Results for each channel as float32
+        r = 0.0
+        g = 0.0
+        b = 0.0
         
         # Calculate interpolation for each channel
         top_r = img[y0, x0, 0] * (1 - wx) + img[y0, x1, 0] * wx
         bottom_r = img[y1, x0, 0] * (1 - wx) + img[y1, x1, 0] * wx
-        r = int(top_r * (1 - wy) + bottom_r * wy)
+        r = top_r * (1 - wy) + bottom_r * wy
         
         top_g = img[y0, x0, 1] * (1 - wx) + img[y0, x1, 1] * wx
         bottom_g = img[y1, x0, 1] * (1 - wx) + img[y1, x1, 1] * wx
-        g = int(top_g * (1 - wy) + bottom_g * wy)
+        g = top_g * (1 - wy) + bottom_g * wy
         
         top_b = img[y0, x0, 2] * (1 - wx) + img[y0, x1, 2] * wx
         bottom_b = img[y1, x0, 2] * (1 - wx) + img[y1, x1, 2] * wx
-        b = int(top_b * (1 - wy) + bottom_b * wy)
+        b = top_b * (1 - wy) + bottom_b * wy
         
         return r, g, b

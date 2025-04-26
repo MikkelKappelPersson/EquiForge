@@ -2,6 +2,7 @@
 Equirectangular to Perspective Converter
 
 This module converts equirectangular projections to perspective images with optimized performance.
+All processing is done using float32 precision for optimal balance of accuracy and performance.
 """
 
 import numpy as np
@@ -13,7 +14,7 @@ import logging
 from multiprocessing import Pool, cpu_count
 from numba import jit, prange, cuda
 from ..utils.projection_utils import create_rotation_matrix, calculate_focal_length, check_cuda_support, timer
-from ..utils.logging_utils import setup_logger, set_log_level
+from ..utils.logging_utils import setup_logger
 from ..utils.sampling import sample_image
 
 # Set up logger
@@ -22,11 +23,15 @@ logger = setup_logger(__name__)
 # Check for CUDA support
 HAS_CUDA = check_cuda_support()
 
+# Update imports to include GPU sampling methods
+if HAS_CUDA:
+    from ..utils.sampling import nearest_neighbor_sampling_gpu, bilinear_sampling_gpu
+
 # Define CUDA kernel for GPU acceleration
 if HAS_CUDA:
     @cuda.jit
     def equi2pers_gpu_kernel(equi, perspective, output_width, output_height, 
-                         cx, cy, f_h, f_v, equi_w, equi_h, r_matrix):
+                         cx, cy, f_h, f_v, equi_w, equi_h, r_matrix, sampling_method):
         """CUDA kernel to convert pixels from equirectangular to perspective"""
         x, y = cuda.grid(2)
         
@@ -62,21 +67,40 @@ if HAS_CUDA:
             
             # Map spherical coordinates to equirectangular pixel coordinates
             # Convert theta from [-pi, pi] to [0, equi_w]
-            equi_x = int((theta + np.pi) / (2 * np.pi) * equi_w) % equi_w
+            equi_x = ((theta + np.pi) / (2 * np.pi) * equi_w) % equi_w
             
             # Convert phi from [-pi/2, pi/2] to [0, equi_h]
-            equi_y = int((np.pi/2 - phi) / np.pi * equi_h) % equi_h  # Standard mapping for equirectangular
+            equi_y = ((np.pi/2 - phi) / np.pi * equi_h) % equi_h
             
-            # Copy pixel values
-            perspective[y, x, 0] = equi[equi_y, equi_x, 0]
-            perspective[y, x, 1] = equi[equi_y, equi_x, 1]
-            perspective[y, x, 2] = equi[equi_y, equi_x, 2]
+            r, g, b = 0, 0, 0
+            
+            # Use appropriate sampling method based on parameter
+            if sampling_method == 1:  # Bilinear
+                # For bilinear we need float coordinates and bounds check with margin
+                if 0 <= equi_x < equi_w-1 and 0 <= equi_y < equi_h-1:
+                    r, g, b = bilinear_sampling_gpu(equi, equi_y, equi_x, equi_w, equi_h)
+            else:  # Nearest neighbor (default)
+                # For nearest we can use direct bounds check
+                if 0 <= equi_x < equi_w and 0 <= equi_y < equi_h:
+                    r, g, b = nearest_neighbor_sampling_gpu(equi, equi_y, equi_x, equi_w, equi_h)
+            
+            # Assign sampled values to output
+            perspective[y, x, 0] = r
+            perspective[y, x, 1] = g
+            perspective[y, x, 2] = b
 
 @jit(nopython=True, parallel=True)
 def equi2pers_cpu_kernel(equi, perspective, output_width, output_height, 
                        x_start, x_end, cx, cy, f_h, f_v, equi_w, equi_h, r_matrix_inv, sampling_method="bilinear"):
     """Process a range of columns with Numba optimization on CPU"""
-    for x in prange(x_start, x_end):
+    # Convert to float32 for processing
+    perspective = perspective.astype(np.float32)
+    equi = equi.astype(np.float32)
+    
+    chunk_width = x_end - x_start
+    for chunk_x in prange(chunk_width):
+        x = x_start + chunk_x  # Convert local chunk coordinate to global image coordinate
+        
         for y in range(output_height):
             # Calculate normalized device coordinates with standard y-axis orientation
             ndc_x = (x - cx) / f_h
@@ -106,10 +130,11 @@ def equi2pers_cpu_kernel(equi, perspective, output_width, output_height,
             equi_x = int((theta + np.pi) / (2 * np.pi) * equi_w) % equi_w
             equi_y = int((np.pi/2 - phi) / np.pi * equi_h) % equi_h  # Standard mapping for equirectangular
             
-            # Use sampling function for pixel assignment
-            perspective[y, x] = sample_image(equi, equi_y, equi_x, sampling_method)
+            # Use sampling function for pixel assignment - write to local chunk coordinate
+            perspective[y, chunk_x] = sample_image(equi, equi_y, equi_x, sampling_method)
     
-    return perspective
+    # Convert back to uint8 for output
+    return np.clip(perspective, 0, 255).astype(np.uint8)
 
 def process_chunk(args):
     """Process a horizontal chunk of the perspective image"""
@@ -132,11 +157,12 @@ def process_chunk(args):
     R_inv = np.linalg.inv(R)
     
     # Create a chunk of the output image
-    chunk = np.zeros((output_height, x_end - x_start, 3), dtype=np.uint8)
+    chunk_width = x_end - x_start
+    chunk = np.zeros((output_height, chunk_width, 3), dtype=np.float32)
     
-    # Use CPU kernel for processing the chunk
+    # Use CPU kernel for processing the chunk - fixed to use proper coordinates
     chunk = equi2pers_cpu_kernel(equi, chunk, output_width, output_height, 
-                              0, x_end - x_start, cx, cy, f_h, f_v, equi_w, equi_h, R_inv, sampling_method)
+                              x_start, x_end, cx, cy, f_h, f_v, equi_w, equi_h, R_inv, sampling_method)
     
     return chunk, x_start, x_end
 
@@ -194,7 +220,7 @@ def equi2pers_cpu(equi, output_width, output_height,
 
 @timer
 def equi2pers_gpu(equi, output_width, output_height,
-                 fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0):
+                 fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, sampling_method="bilinear"):
     """GPU-accelerated conversion from equirectangular to perspective projection"""
     logger.info("Using GPU acceleration...")
     equi_h, equi_w = equi.shape[:2]
@@ -213,12 +239,12 @@ def equi2pers_gpu(equi, output_width, output_height,
     R = create_rotation_matrix(yaw_rad, pitch_rad, roll_rad)
     R_inv = np.linalg.inv(R)
     
-    # Create output perspective image
-    perspective = np.zeros((output_height, output_width, 3), dtype=np.uint8)
+    # Create output perspective image (using float32 for processing)
+    perspective = np.zeros((output_height, output_width, 3), dtype=np.float32)
     
-    # Copy data to GPU
+    # Copy data to GPU - convert inputs to float32 for processing
     logger.debug("Copying data to GPU...")
-    d_equi = cuda.to_device(equi)
+    d_equi = cuda.to_device(equi.astype(np.float32))
     d_perspective = cuda.to_device(perspective)
     d_r_matrix = cuda.to_device(R_inv)  # Use the inverse rotation matrix
     
@@ -228,22 +254,26 @@ def equi2pers_gpu(equi, output_width, output_height,
     blocks_y = (output_height + threads_per_block[1] - 1) // threads_per_block[1]
     blocks_per_grid = (blocks_x, blocks_y)
     
-    # Launch kernel
+    # Convert sampling method string to numeric value
+    sampling_method_code = 1 if sampling_method.lower() == "bilinear" else 0
+    
+    # Launch kernel with sampling method parameter
     logger.debug(f"Launching CUDA kernel with grid={blocks_per_grid}, block={threads_per_block}")
     equi2pers_gpu_kernel[blocks_per_grid, threads_per_block](
         d_equi, d_perspective, output_width, output_height, 
-        cx, cy, f_h, f_v, equi_w, equi_h, d_r_matrix
+        cx, cy, f_h, f_v, equi_w, equi_h, d_r_matrix, sampling_method_code
     )
     
-    # Copy result back to host
+    # Copy result back to host and convert to uint8
     logger.debug("Copying result back to CPU...")
     perspective = d_perspective.copy_to_host()
     
-    return perspective
+    # Convert back to uint8 for output
+    return np.clip(perspective, 0, 255).astype(np.uint8)
 
 def equi2pers(img, output_width, output_height,
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True, sampling_method="bilinear", log_level="INFO"):
+              use_gpu=True, sampling_method="bilinear"):
     """
     Convert equirectangular image to perspective projection
     
@@ -257,21 +287,16 @@ def equi2pers(img, output_width, output_height,
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
     - use_gpu: Whether to use GPU acceleration if available
     - sampling_method: Sampling method for pixel interpolation (default: "bilinear")
-    - log_level: Optional override for log level during this conversion (default: "INFO")
     
     Returns:
-    - Perspective image as numpy array
+    - Perspective image as numpy array (uint8)
+    
+    Notes:
+    - All internal processing is performed using float32 precision
+    - Input images are converted to float32 for processing regardless of input type
+    - Output is converted back to uint8 after processing
+    - To change logging verbosity, use set_global_log_level() from utils.logging_utils
     """
-    # Set temporary log level for this module's logger
-    original_level = set_log_level(logger, log_level)
-    
-    # Also set the same log level for the projection_utils logger that's used by the timer decorator
-    projection_logger = logging.getLogger('equiforge.utils.projection_utils')
-    original_proj_level = None
-    if projection_logger:
-        original_proj_level = projection_logger.level
-        set_log_level(projection_logger, log_level)
-    
     # Debug output for better diagnostics
     logger.info(f"equi2pers called with output_width={output_width}, output_height={output_height}, fov_x={fov_x}, use_gpu={use_gpu}")
     
@@ -299,7 +324,7 @@ def equi2pers(img, output_width, output_height,
     result = None
     if use_gpu and HAS_CUDA:
         logger.info("Using GPU processing")
-        result = equi2pers_gpu(img, output_width, output_height, fov_x, yaw, pitch, roll)
+        result = equi2pers_gpu(img, output_width, output_height, fov_x, yaw, pitch, roll, sampling_method)
     else:
         if use_gpu and not HAS_CUDA:
             logger.info("GPU requested but not available, using CPU")
@@ -312,10 +337,4 @@ def equi2pers(img, output_width, output_height,
     
     logger.info("Processing completed successfully")
     
-    # Restore original log levels
-    if original_level is not None:
-        logger.setLevel(original_level)
-    if original_proj_level is not None and projection_logger:
-        projection_logger.setLevel(original_proj_level)
-        
     return result

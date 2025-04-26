@@ -3,11 +3,10 @@ Logging utilities for EquiForge.
 
 This module provides consistent logging configuration across the package.
 """
-
-import logging
 import sys
 from typing import Optional, Union
 import io
+import logging
 
 # Default log format
 DEFAULT_LOG_FORMAT = "%(levelname)s: %(message)s"  # Simplified format for notebooks
@@ -18,7 +17,7 @@ logging.addLevelName(SILENT, "SILENT")
 
 def setup_logger(
     name: str, 
-    level: int = logging.INFO, 
+    level: int = logging.WARNING,  # Changed to WARNING for consistency
     log_file: Optional[str] = None, 
     format_str: str = DEFAULT_LOG_FORMAT,
     force_console: bool = True
@@ -28,7 +27,7 @@ def setup_logger(
     
     Parameters:
     - name: Logger name (usually __name__ of the calling module)
-    - level: Logging level (default: INFO)
+    - level: Logging level (default: WARNING)
     - log_file: Optional file to log to (default: None = console only)
     - format_str: Log message format string
     - force_console: Force adding console output even in notebooks
@@ -62,7 +61,28 @@ def setup_logger(
     
     return logger
 
-def set_package_log_level(level: Union[int, str, None], show_logs: bool = True, show_initial_message: bool = True) -> None:
+def set_log_level(logger, level):
+    """
+    Set the log level of a logger, supporting string level names.
+    
+    Parameters:
+    - logger: Logger to modify
+    - level: Either a valid logging level (int) or level name (str)
+    
+    Returns:
+    - Original log level before change
+    """
+    original_level = logger.level
+    
+    # Parse the log level
+    parsed_level = parse_log_level(level)
+    
+    # Set the level
+    logger.setLevel(parsed_level)
+    
+    return original_level
+
+def set_package_log_level(level: Union[int, str, None], show_logs: bool = True, show_initial_message: bool = True) -> dict:
     """
     Set the logging level for all EquiForge loggers throughout the application.
     
@@ -71,14 +91,21 @@ def set_package_log_level(level: Union[int, str, None], show_logs: bool = True, 
     - show_logs: Whether to ensure logs are displayed on console
     - show_initial_message: Whether to show the "Logging configured" message
     
+    Returns:
+    - Dictionary mapping logger names to their previous levels for restoration if needed
+    
     This function affects ALL loggers in the equiforge package hierarchy,
     ensuring consistent behavior across different modules.
     """
     # Parse the level if it's a string
     parsed_level = parse_log_level(level)
     
+    # Store previous levels
+    previous_levels = {}
+    
     # Get the root logger for the package
     equiforge_logger = logging.getLogger('equiforge')
+    previous_levels['equiforge'] = equiforge_logger.level
     equiforge_logger.setLevel(parsed_level)
     
     # Ensure there's at least one handler that outputs to console for the root logger
@@ -95,6 +122,7 @@ def set_package_log_level(level: Union[int, str, None], show_logs: bool = True, 
     for name in logging.root.manager.loggerDict:
         if name == 'equiforge' or name.startswith('equiforge.'):
             logger = logging.getLogger(name)
+            previous_levels[name] = logger.level
             logger.setLevel(parsed_level)
             
             # Update all handlers for this logger
@@ -113,6 +141,19 @@ def set_package_log_level(level: Union[int, str, None], show_logs: bool = True, 
         }.get(parsed_level, str(parsed_level))
         
         equiforge_logger.info(f"Logging configured successfully at level: {level_name}")
+    
+    return previous_levels
+
+def restore_log_levels(level_dict):
+    """
+    Restore logging levels from a dictionary returned by set_package_log_level.
+    
+    Parameters:
+    - level_dict: Dictionary mapping logger names to levels
+    """
+    for name, level in level_dict.items():
+        logger = logging.getLogger(name)
+        logger.setLevel(level)
 
 # Function to create a string buffer logger for capturing logs in notebooks
 def create_string_logger() -> tuple:
@@ -172,8 +213,8 @@ def silence_logger(logger, silence=True):
         logger.setLevel(SILENT)
         return previous_level
     else:
-        # Restores to default INFO if no level is provided
-        logger.setLevel(logging.INFO)
+        # Restores to SILENT by default (changed from INFO)
+        logger.setLevel(SILENT)
         return None
 
 def parse_log_level(level: Union[int, str, None]) -> int:
@@ -204,33 +245,11 @@ def parse_log_level(level: Union[int, str, None]) -> int:
         elif level_upper == "CRITICAL":
             return logging.CRITICAL
         else:
-            # Try to convert to int, or default to INFO
+            # Try to convert to int, or default to SILENT (changed from INFO)
             try:
                 return int(level)
             except ValueError:
-                return logging.INFO
+                return SILENT
     
     # Already an integer
     return level
-
-# Function to set log level with string or int
-def set_log_level(logger, level):
-    """
-    Set the log level of a logger, supporting string level names.
-    
-    Parameters:
-    - logger: Logger to modify
-    - level: Either a valid logging level (int) or level name (str)
-    
-    Returns:
-    - Original log level before change
-    """
-    original_level = logger.level
-    
-    # Parse the log level
-    parsed_level = parse_log_level(level)
-    
-    # Set the level
-    logger.setLevel(parsed_level)
-    
-    return original_level

@@ -13,4 +13,5 @@ The project prioritizes performance and ease of use for handling 360° imagery a
 - Keep code simple and easily readable
 - Avoid unnecessary complexity
 - Avoid exception handling where possible; prefer to let code fail fast and explicitly
+- use float32 for all image processing operations
 
