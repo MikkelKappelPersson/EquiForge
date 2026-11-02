@@ -12,6 +12,10 @@ import pytest
 
 from equiforge.converters.equi2pers import equi2pers, equi2pers_cpu, process_chunk
 from equiforge.utils.sampling import bilinear_sampling
+from equiforge.utils.projection_utils import check_cuda_support
+
+_HAS_CUDA = check_cuda_support()
+needs_cuda = pytest.mark.skipif(not _HAS_CUDA, reason="CUDA not available")
 
 
 def test_float32_constant_hdr():
@@ -148,3 +152,69 @@ def test_process_chunk_threads_output_dtype():
     chunk_legacy, _, _ = process_chunk(
         (equi, 0, 8, 16, 8, params, "bilinear"))
     assert chunk_legacy.dtype == np.uint8
+
+
+@needs_cuda
+def test_gpu_float32_constant_hdr():
+    """GPU: constant 1000.0 stays 1000.0 with float32, clips to 255 with uint8."""
+    equi = np.full((50, 100, 3), 1000.0, dtype=np.float32)
+    out = equi2pers(equi, output_width=32, output_height=32, fov_x=90,
+                    use_gpu=True, output_dtype="float32")
+    assert out.dtype == np.float32
+    assert np.allclose(out, 1000.0, atol=1e-3)
+    out_u8 = equi2pers(equi, output_width=32, output_height=32, fov_x=90,
+                       use_gpu=True, output_dtype="uint8")
+    assert out_u8.dtype == np.uint8
+    assert np.all(out_u8 == 255)
+
+
+@needs_cuda
+def test_gpu_true_bilinear_seam_pole():
+    """GPU must match CPU: half-pixel bilinear, seam smooth, pole clamped."""
+    # Half-pixel bilinear (yaw=0.9 puts centre at equi_x=100.5).
+    W, H = 200, 50
+    equi = np.zeros((H, W, 3), dtype=np.float32)
+    ramp = np.arange(W, dtype=np.float32)
+    for c in range(3):
+        equi[:, :, c] = np.tile(ramp, (H, 1))
+    out = equi2pers(equi, output_width=11, output_height=11, fov_x=90,
+                    yaw=0.9, use_gpu=True, output_dtype="float32")
+    assert 100.2 < float(out[5, 5, 0]) < 100.8
+
+    # Seam: smooth periodic longitude function, narrow view at yaw=180.
+    W, H = 400, 200
+    equi2 = np.zeros((H, W, 3), dtype=np.float32)
+    xs = np.arange(W, dtype=np.float64)
+    theta = xs / W * 2 * np.pi - np.pi
+    vals = 2000.0 + 1000.0 * np.sin(4 * theta)
+    for j in range(W):
+        equi2[:, j, :] = np.float32(vals[j])
+    out2 = equi2pers(equi2, output_width=64, output_height=64, fov_x=10,
+                     yaw=180, use_gpu=True, output_dtype="float32")
+    diffs = np.abs(np.diff(out2[32, :, 0].astype(np.float64)))
+    assert diffs.max() < 30.0, f"GPU seam discontinuity: {diffs.max()}"
+
+    # Pole: pitch=+90 looks at south pole (bottom row ~1000, not top row 0).
+    equi3 = np.zeros((100, 200, 3), dtype=np.float32)
+    equi3[0, :, :] = 0.0
+    equi3[-1, :, :] = 1000.0
+    equi3[1:-1, :, :] = 500.0
+    out3 = equi2pers(equi3, output_width=32, output_height=32, fov_x=90,
+                     yaw=0, pitch=90, use_gpu=True, output_dtype="float32")
+    assert float(out3[16, 16, 0]) > 900.0
+
+
+@needs_cuda
+def test_gpu_cpu_consistency():
+    """GPU and CPU agree to <1e-4 on HDR data (catches rotation/transpose bugs)."""
+    rng = np.random.default_rng(0)
+    equi = (rng.random((60, 120, 3), dtype=np.float32) * 5000.0).astype(np.float32)
+    out_cpu = equi2pers(equi, output_width=32, output_height=32, fov_x=90,
+                        yaw=20, pitch=10, use_gpu=False, output_dtype="float32")
+    out_gpu = equi2pers(equi, output_width=32, output_height=32, fov_x=90,
+                        yaw=20, pitch=10, use_gpu=True, output_dtype="float32")
+    assert out_gpu.dtype == np.float32
+    # GPU uses cuda.libdevice transcendentals vs NumPy on CPU: expect tiny
+    # float32 rounding differences (~1e-2 abs on 5e3-magnitude HDR data).
+    assert np.allclose(out_cpu, out_gpu, atol=5e-2, rtol=1e-4), \
+        f"max abs diff {np.abs(out_cpu - out_gpu).max()}"

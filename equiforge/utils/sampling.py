@@ -6,6 +6,7 @@ All sampling operations use float32 precision for calculations.
 """
 
 import numpy as np
+import math
 from numba import jit, cuda
 from ..utils.projection_utils import check_cuda_support
 
@@ -173,8 +174,8 @@ if HAS_CUDA:
             py = h - 1
 
         if wrap_x:
-            # Wrap longitude into [0, w).
-            x_wrapped = x - np.floor(x / float(w)) * float(w)
+            # Wrap longitude into [0, w). math.floor is CUDA-safe (np.floor is not).
+            x_wrapped = x - math.floor(x / float(w)) * float(w)
             if x_wrapped >= float(w):
                 x_wrapped = 0.0
             if x_wrapped < 0.0:
@@ -218,12 +219,12 @@ if HAS_CUDA:
         wy = y - y0
 
         if wrap_x:
-            x_wrapped = x - np.floor(x / float(w)) * float(w)
+            x_wrapped = x - math.floor(x / float(w)) * float(w)
             if x_wrapped >= float(w):
                 x_wrapped = 0.0
             if x_wrapped < 0.0:
                 x_wrapped = 0.0
-            x0 = int(np.floor(x_wrapped))
+            x0 = int(math.floor(x_wrapped))
             if x0 >= w:
                 x0 = 0
             if x0 < 0:

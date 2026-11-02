@@ -54,12 +54,12 @@ if HAS_CUDA:
             dir_y /= length
             dir_z /= length
             
-            # Apply inverse rotation to get world direction
-            # CUDA-specific memory handling
+            # Apply inverse rotation to get world direction.
+            # Row-major (matches equi2pers_cpu_kernel): world = R_inv @ dir.
             world_dir = cuda.local.array(3, dtype=np.float32)
-            world_dir[0] = r_matrix[0, 0] * dir_x + r_matrix[1, 0] * dir_y + r_matrix[2, 0] * dir_z
-            world_dir[1] = r_matrix[0, 1] * dir_x + r_matrix[1, 1] * dir_y + r_matrix[2, 1] * dir_z
-            world_dir[2] = r_matrix[0, 2] * dir_x + r_matrix[1, 2] * dir_y + r_matrix[2, 2] * dir_z
+            world_dir[0] = r_matrix[0, 0] * dir_x + r_matrix[0, 1] * dir_y + r_matrix[0, 2] * dir_z
+            world_dir[1] = r_matrix[1, 0] * dir_x + r_matrix[1, 1] * dir_y + r_matrix[1, 2] * dir_z
+            world_dir[2] = r_matrix[2, 0] * dir_x + r_matrix[2, 1] * dir_y + r_matrix[2, 2] * dir_z
             
             # Convert to spherical coordinates
             theta = np.arctan2(world_dir[0], world_dir[2])  # longitude (yaw)
