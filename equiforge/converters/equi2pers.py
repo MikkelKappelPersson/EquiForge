@@ -65,24 +65,21 @@ if HAS_CUDA:
             theta = np.arctan2(world_dir[0], world_dir[2])  # longitude (yaw)
             phi = np.arcsin(world_dir[1])                  # latitude (pitch)
             
-            # Map spherical coordinates to equirectangular pixel coordinates
-            # Convert theta from [-pi, pi] to [0, equi_w]
-            equi_x = ((theta + np.pi) / (2 * np.pi) * equi_w) % equi_w
-            
-            # Convert phi from [-pi/2, pi/2] to [0, equi_h]
-            equi_y = ((np.pi/2 - phi) / np.pi * equi_h) % equi_h
+            # Map spherical coordinates to equirectangular pixel coordinates.
+            # Keep float coordinates (bilinear needs sub-pixel position).
+            # Longitude wrap is handled inside sampling (wrap_x=True); latitude
+            # is clamped in sampling (poles do not wrap), so no % on equi_y.
+            equi_x = (theta + np.pi) / (2 * np.pi) * equi_w
+            equi_y = (np.pi/2 - phi) / np.pi * equi_h
             
             r, g, b = 0, 0, 0
             
-            # Use appropriate sampling method based on parameter
+            # No edge-reject here: sampling clamps y and wraps x, so every ray
+            # maps to a valid equirect texel (even at the seam/poles).
             if sampling_method == 1:  # Bilinear
-                # For bilinear we need float coordinates and bounds check with margin
-                if 0 <= equi_x < equi_w-1 and 0 <= equi_y < equi_h-1:
-                    r, g, b = bilinear_sampling_gpu(equi, equi_y, equi_x, equi_w, equi_h)
+                r, g, b = bilinear_sampling_gpu(equi, equi_y, equi_x, equi_w, equi_h, True)
             else:  # Nearest neighbor (default)
-                # For nearest we can use direct bounds check
-                if 0 <= equi_x < equi_w and 0 <= equi_y < equi_h:
-                    r, g, b = nearest_neighbor_sampling_gpu(equi, equi_y, equi_x, equi_w, equi_h)
+                r, g, b = nearest_neighbor_sampling_gpu(equi, equi_y, equi_x, equi_w, equi_h, True)
             
             # Assign sampled values to output
             perspective[y, x, 0] = r
@@ -92,11 +89,13 @@ if HAS_CUDA:
 @jit(nopython=True, parallel=True)
 def equi2pers_cpu_kernel(equi, perspective, output_width, output_height, 
                        x_start, x_end, cx, cy, f_h, f_v, equi_w, equi_h, r_matrix_inv, sampling_method="bilinear"):
-    """Process a range of columns with Numba optimization on CPU"""
-    # Convert to float32 for processing
-    perspective = perspective.astype(np.float32)
-    equi = equi.astype(np.float32)
-    
+    """Process a range of columns with Numba optimization on CPU.
+
+    Always works in float32 and returns float32 (no clipping); the caller
+    decides on uint8 vs float32 output. Source coordinates are kept as floats
+    so bilinear sampling truly interpolates, x wraps periodically at the
+    longitude seam (via wrap_x=True) and y is clamped (poles do not wrap).
+    """
     chunk_width = x_end - x_start
     for chunk_x in prange(chunk_width):
         x = x_start + chunk_x  # Convert local chunk coordinate to global image coordinate
@@ -126,19 +125,34 @@ def equi2pers_cpu_kernel(equi, perspective, output_width, output_height,
             theta = np.arctan2(world_dir_x, world_dir_z)  # longitude (yaw)
             phi = np.arcsin(world_dir_y)                  # latitude (pitch)
             
-            # Map spherical coordinates to equirectangular pixel coordinates with standard orientation
-            equi_x = int((theta + np.pi) / (2 * np.pi) * equi_w) % equi_w
-            equi_y = int((np.pi/2 - phi) / np.pi * equi_h) % equi_h  # Standard mapping for equirectangular
+            # Map spherical coordinates to equirectangular pixel coordinates.
+            # Keep sub-pixel (float) position so bilinear truly interpolates.
+            # Do NOT truncate with int(); do NOT wrap latitude with % (poles clamp).
+            # Longitude wrapping is handled inside sampling via wrap_x=True.
+            equi_x = (theta + np.pi) / (2 * np.pi) * equi_w
+            equi_y = (np.pi/2 - phi) / np.pi * equi_h  # Standard mapping for equirectangular
             
-            # Use sampling function for pixel assignment - write to local chunk coordinate
-            perspective[y, chunk_x] = sample_image(equi, equi_y, equi_x, sampling_method)
+            # Use sampling function for pixel assignment - write to local chunk coordinate.
+            # wrap_x=True: periodic longitude seam; y always clamped in sampling.
+            perspective[y, chunk_x] = sample_image(equi, equi_y, equi_x, sampling_method, True)
     
-    # Convert back to uint8 for output
-    return np.clip(perspective, 0, 255).astype(np.uint8)
+    # Return raw float32 samples (no clip/cast here; caller handles output_dtype).
+    return perspective
 
 def process_chunk(args):
-    """Process a horizontal chunk of the perspective image"""
-    equi, x_start, x_end, output_width, output_height, params, sampling_method = args
+    """Process a horizontal chunk of the perspective image.
+
+    Accepts either the legacy 7-tuple
+      (equi, x_start, x_end, output_width, output_height, params, sampling_method)
+    or the new 8-tuple with trailing output_dtype.
+    The chunk kernel always works in float32; uint8 conversion (clip) happens
+    here per chunk so the default path stays uint8 end to end.
+    """
+    if len(args) == 8:
+        equi, x_start, x_end, output_width, output_height, params, sampling_method, output_dtype = args
+    else:
+        equi, x_start, x_end, output_width, output_height, params, sampling_method = args
+        output_dtype = "uint8"
     equi_h, equi_w = equi.shape[:2]
     fov_x, yaw, pitch, roll = params
     
@@ -156,20 +170,33 @@ def process_chunk(args):
     R = create_rotation_matrix(yaw_rad, pitch_rad, roll_rad)
     R_inv = np.linalg.inv(R)
     
-    # Create a chunk of the output image
+    # Create a chunk of the output image (float32 working buffer).
     chunk_width = x_end - x_start
     chunk = np.zeros((output_height, chunk_width, 3), dtype=np.float32)
     
+    # Ensure float32 input for the Numba kernel (preserves HDR radiance as-is).
+    equi_f = equi.astype(np.float32, copy=False)
     # Use CPU kernel for processing the chunk - fixed to use proper coordinates
-    chunk = equi2pers_cpu_kernel(equi, chunk, output_width, output_height, 
+    chunk = equi2pers_cpu_kernel(equi_f, chunk, output_width, output_height, 
                               x_start, x_end, cx, cy, f_h, f_v, equi_w, equi_h, R_inv, sampling_method)
     
-    return chunk, x_start, x_end
+    if output_dtype == "float32":
+        # Raw sampled radiance, no [0, 255] clip, no cast.
+        return chunk, x_start, x_end
+    # Default legacy behaviour: clip to display range.
+    return np.clip(chunk, 0, 255).astype(np.uint8), x_start, x_end
 
 def equi2pers_cpu(equi, output_width, output_height,
                   fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, 
-                  sampling_method="bilinear"):
-    """Multi-threaded conversion from equirectangular to perspective projection"""
+                  sampling_method="bilinear", output_dtype="uint8"):
+    """Multi-threaded conversion from equirectangular to perspective projection.
+
+    Parameters:
+    - output_dtype: "uint8" (default, legacy: clip to [0, 255] and cast) or
+      "float32" (raw sampled radiance, no clip/cast for HDR EXR workflows).
+    """
+    if output_dtype not in ("uint8", "float32"):
+        raise ValueError(f"output_dtype must be 'uint8' or 'float32', got {output_dtype!r}")
     # Validation to ensure image has proper shape
     if len(equi.shape) != 3 or equi.shape[2] != 3:
         logger.error(f"Input image must have shape (height, width, 3), got {equi.shape}")
@@ -182,16 +209,24 @@ def equi2pers_cpu(equi, output_width, output_height,
     chunk_size = max(1, output_width // num_processes)
     num_processes = min(num_processes, output_width) # Adjust if output is smaller than process count
     
-    # Prepare arguments for each process
+    # Prepare arguments for each process.
+    # NOTE: the last chunk extends to output_width so no right-edge columns
+    # are left unwritten when output_width is not divisible by num_processes.
     args_list = []
     for i in range(num_processes):
         x_start = i * chunk_size
-        x_end = min(x_start + chunk_size, output_width)
+        if i == num_processes - 1:
+            x_end = output_width
+        else:
+            x_end = min(x_start + chunk_size, output_width)
         args_list.append((equi, x_start, x_end, output_width, output_height, 
-                         (fov_x, yaw, pitch, roll), sampling_method))
+                         (fov_x, yaw, pitch, roll), sampling_method, output_dtype))
     
     # Create output perspective image
-    perspective = np.zeros((output_height, output_width, 3), dtype=np.uint8)
+    if output_dtype == "float32":
+        perspective = np.zeros((output_height, output_width, 3), dtype=np.float32)
+    else:
+        perspective = np.zeros((output_height, output_width, 3), dtype=np.uint8)
     
     # Process chunks in parallel
     logger.info(f"Converting equirectangular to perspective using {num_processes} CPU processes...")
@@ -220,8 +255,14 @@ def equi2pers_cpu(equi, output_width, output_height,
 
 @timer
 def equi2pers_gpu(equi, output_width, output_height,
-                 fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, sampling_method="bilinear"):
-    """GPU-accelerated conversion from equirectangular to perspective projection"""
+                 fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0, sampling_method="bilinear",
+                 output_dtype="uint8"):
+    """GPU-accelerated conversion from equirectangular to perspective projection.
+
+    output_dtype: "uint8" (default, clip to [0, 255]) or "float32" (raw HDR).
+    """
+    if output_dtype not in ("uint8", "float32"):
+        raise ValueError(f"output_dtype must be 'uint8' or 'float32', got {output_dtype!r}")
     logger.info("Using GPU acceleration...")
     equi_h, equi_w = equi.shape[:2]
     
@@ -264,16 +305,19 @@ def equi2pers_gpu(equi, output_width, output_height,
         cx, cy, f_h, f_v, equi_w, equi_h, d_r_matrix, sampling_method_code
     )
     
-    # Copy result back to host and convert to uint8
+    # Copy result back to host.
     logger.debug("Copying result back to CPU...")
     perspective = d_perspective.copy_to_host()
     
-    # Convert back to uint8 for output
+    if output_dtype == "float32":
+        # Raw sampled radiance, no [0, 255] clip and no cast.
+        return perspective.astype(np.float32, copy=False)
+    # Default legacy behaviour: clip to display range.
     return np.clip(perspective, 0, 255).astype(np.uint8)
 
 def equi2pers(img, output_width, output_height,
               fov_x=90.0, yaw=0.0, pitch=0.0, roll=0.0,
-              use_gpu=True, sampling_method="bilinear"):
+              use_gpu=True, sampling_method="bilinear", output_dtype="uint8"):
     """
     Convert equirectangular image to perspective projection
     
@@ -287,16 +331,24 @@ def equi2pers(img, output_width, output_height,
     - roll: Rotation around depth axis (clockwise/counterclockwise) in degrees
     - use_gpu: Whether to use GPU acceleration if available
     - sampling_method: Sampling method for pixel interpolation (default: "bilinear")
+    - output_dtype: "uint8" (default, legacy: clip to [0, 255] and cast to
+      uint8) or "float32" (raw sampled radiance with no clip/cast, for HDR
+      EXR/float32 training corpora with values >> 255).
     
     Returns:
-    - Perspective image as numpy array (uint8)
+    - Perspective image as numpy array (uint8 by default; float32 if requested)
     
     Notes:
     - All internal processing is performed using float32 precision
     - Input images are converted to float32 for processing regardless of input type
-    - Output is converted back to uint8 after processing
+    - uint8 output is clipped to [0, 255] after processing (legacy behaviour)
+    - float32 output returns raw samples with no clip/cast (HDR-safe)
+    - Longitude (x) wraps periodically at the +/-180 deg seam; latitude (y)
+      is clamped (poles do not wrap).
     - To change logging verbosity, use set_global_log_level() from utils.logging_utils
     """
+    if output_dtype not in ("uint8", "float32"):
+        raise ValueError(f"output_dtype must be 'uint8' or 'float32', got {output_dtype!r}")
     # Debug output for better diagnostics
     logger.info(f"equi2pers called with output_width={output_width}, output_height={output_height}, fov_x={fov_x}, use_gpu={use_gpu}")
     
@@ -324,7 +376,7 @@ def equi2pers(img, output_width, output_height,
     result = None
     if use_gpu and HAS_CUDA:
         logger.info("Using GPU processing")
-        result = equi2pers_gpu(img, output_width, output_height, fov_x, yaw, pitch, roll, sampling_method)
+        result = equi2pers_gpu(img, output_width, output_height, fov_x, yaw, pitch, roll, sampling_method, output_dtype)
     else:
         if use_gpu and not HAS_CUDA:
             logger.info("GPU requested but not available, using CPU")
@@ -333,7 +385,7 @@ def equi2pers(img, output_width, output_height,
         
         # CPU processing
         logger.info("Starting CPU processing")
-        result = equi2pers_cpu(img, output_width, output_height, fov_x, yaw, pitch, roll, sampling_method)
+        result = equi2pers_cpu(img, output_width, output_height, fov_x, yaw, pitch, roll, sampling_method, output_dtype)
     
     logger.info("Processing completed successfully")
     

@@ -69,15 +69,15 @@ if HAS_CUDA:
                 
                 r, g, b = 0, 0, 0
                 
-                # Use appropriate sampling method based on parameter
+                # Perspective source does NOT wrap in x: keep wrap_x=False.
                 if sampling_method == 1:  # Bilinear
                     # For bilinear we need float coordinates and bounds check with margin
                     if 0 <= px < w-1 and 0 <= py < h-1:
-                        r, g, b = bilinear_sampling_gpu(img, py, px, w, h)
+                        r, g, b = bilinear_sampling_gpu(img, py, px, w, h, False)
                 else:  # Nearest neighbor (default)
                     # For nearest we can use direct bounds check
                     if 0 <= px < w and 0 <= py < h:
-                        r, g, b = nearest_neighbor_sampling_gpu(img, py, px, w, h)
+                        r, g, b = nearest_neighbor_sampling_gpu(img, py, px, w, h, False)
                 
                 # Assign sampled values to output
                 equirect[y, x, 0] = r
@@ -115,8 +115,8 @@ def pers2equi_cpu_kernel(img, equirect, output_width, output_height,
                 py = f_v * vec_rotated_y / vec_rotated_z + cy
                 
                 if 0 <= px < w and 0 <= py < h:
-                    # Use sampling function
-                    equirect[y, x] = sample_image(img, py, px, sampling_method)
+                    # Perspective source does NOT wrap in x: keep wrap_x=False.
+                    equirect[y, x] = sample_image(img, py, px, sampling_method, False)
     
     # Convert back to uint8 for output
     return np.clip(equirect, 0, 255).astype(np.uint8)
