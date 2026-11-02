@@ -22,7 +22,7 @@
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.8+
 - `numpy`, `torch>=2.4`, `Pillow`
 
 ## Installation
